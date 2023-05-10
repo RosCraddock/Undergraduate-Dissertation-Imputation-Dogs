@@ -1,0 +1,688 @@
+---
+title: "Sub-Pedigree LOOCV"
+output: html_document
+date: '2023-05-10'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Clean session
+rm(list = ls())
+#Load in all packages here.
+# Install
+if (FALSE) {
+  setRepositories() # choose CRAN and BioC
+  install.packages(pkg = c("gRain", "devtools"), dep = TRUE)
+  # PR that fixed the repeatPattern() data issue
+  # https://github.com/hojsgaard/gRain/pull/9
+  devtools::install_github(repo = "https://github.com/gregorgorjanc/gRain")
+}
+# Load package
+library(package = "gRain")
+
+# User defined functions
+
+source(file = "AlleleFetch.R")
+
+library(tidyverse)
+library(ggplot2)
+```
+
+## Start with Genotype and Allelic Concordance in AlphaPeel
+First need to import all masked genotype runs (127) from AlphaPeel.
+
+```{r}
+
+#Import AlphaGeno file
+Alpha_Peel_Geno <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlphaPeel Inputs/PBVG_Geno_2009-2014.txt", sep = "", col.names = c("IID", "Genotype"), header = FALSE)
+
+#Set the working directory for this section of r
+setwd(dir="/Users/roscraddock/Documents/Agriculture Uni/Year 3/NERC Placement/AlphaPeel Practice/AlphaPeel-master/AlphaPeel/outputs")
+
+#Separate only those with a genotype recorded
+Geno <- Alpha_Peel_Geno[!Alpha_Peel_Geno$Genotype==9,]
+
+#For loop to insert imputed mask genotype into a dataframe
+i <- 5
+Imputed_Geno <- data.frame (matrix(nrow = 0, ncol = 2))
+df.GenoConcordance <- data.frame(matrix(nrow = 0, ncol = 3))
+nID <- as.numeric(count(Alpha_Peel_Geno))
+for (i in i:nID){
+  test <- i %in% Geno$IID
+  if(any(test)){
+    Filename <- paste(i, "SingleLocus2009-2014.haps", sep="")
+    tmp <- read.csv(Filename, sep = " ", col.names = c("IID", "Genotype_Probabilities"), header = FALSE)
+    tmp <- tmp %>%
+      filter(IID == i)
+    tmp$Genotype_Probabilities <- as.numeric(tmp$Genotype_Probabilities)
+    y <- tmp[2,2,]
+    z <- tmp[3,2,]
+    w <- y+z
+  
+    tmp$Genotype_Probabilities[2] <- w
+    tmp <- tmp[-3,]
+  
+    Imputed_Geno <- rbind(Imputed_Geno, tmp)
+   
+   #Genotype Concordance Set Up
+   ID <- as.numeric(Geno %>%
+     select(IID) %>%
+     filter(IID == i))
+  Genotype <- Geno %>%
+    filter(IID == i) %>%
+    select(Genotype)
+    if (Genotype == 0) {
+    GenProb <- structure(list(True= c(1, 0, 0)), class = "data.frame", row.names = c(NA, -3))
+    } 
+    if (Genotype == 1) {
+    GenProb <- structure(list(True= c(0, 1, 0)), class = "data.frame", row.names = c(NA, -3))
+    } 
+    if (Genotype == 2) {
+    GenProb <- structure(list(True= c(0, 0, 1)), class = "data.frame", row.names = c(NA, -3))
+    } 
+  
+  GenoCon <- tmp$Genotype_Probabilities * GenProb
+  GenoConcordance <- sum(GenoCon)
+  
+  #Allelic Concordance
+  if (Genotype == 0){
+    AM <- structure(list(True= c(1, 0.5, 0)), class = "data.frame", row.names = c(NA, -3))
+  }
+  if (Genotype == 1){
+    AM <- structure(list(True= c(0.5, 1, 0.5)), class = "data.frame", row.names = c(NA, -3))
+  }
+  if (Genotype == 2){
+    AM <- structure(list(True= c(0, 0.5, 1)), class = "data.frame", row.names = c(NA, -3))
+  }
+
+  AlleCon <- tmp$Genotype_Probabilities * AM
+  AllelicConcordance <- sum(AlleCon)
+  #Insert table to add to.
+  tmp2 <- cbind(i, GenoConcordance, AllelicConcordance)
+  df.GenoConcordance <- rbind(df.GenoConcordance, tmp2)
+  
+  }
+}
+
+#Add the genotype states/values
+x <- c("AA", "AB", "BB")
+x <- data.frame(x)
+x <- x %>%
+  rename(Geno_State = "x")
+test <- x
+ID <- ((as.numeric(count(Imputed_Geno)))/3)-1
+
+for(i in 1:ID) {
+test <- rbind(test, x)
+}
+
+Imputed_Geno <- cbind(Imputed_Geno, test)
+```
+
+#Pearson coefficicent between observed and imputed when masked in AlphaPeel
+```{r}
+
+#First widen imputed_geno
+df_ImputedGeno <- Imputed_Geno %>%
+  pivot_wider(names_from = Geno_State, values_from = Genotype_Probabilities)
+#Add column with the geno dosage
+df_ImputedGeno$ImpGenoDosage <- df_ImputedGeno$AA*0+df_ImputedGeno$AB*1+df_ImputedGeno$BB*2
+#Merge with Geno
+df_ImputedGeno <- merge(df_ImputedGeno, Geno, by = "IID")
+#Pearson correlation
+CorAP <- cor.test (df_ImputedGeno$ImpGenoDosage, df_ImputedGeno$Genotype, method = "pearson")
+```
+
+#Summary statistics
+```{r}
+TO DO
+```
+
+
+## LOOCV in AlleleFetch for the Three Models
+
+## Importing and preparing the data
+```{r}
+#Insert the datasets
+GenoScale <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_Geno_2009-2014.csv")
+GenoScale <- GenoScale %>%
+  select(!X)
+PhenoScale <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_Pheno_2009-2014.csv")
+PhenoScale <- PhenoScale %>%
+  select(!X)
+PedScale <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_Ped_2009-2014.csv")
+PedScale <- PedScale %>%
+  select(!X)
+PBGV_POAG_Sub <- read.csv("/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/PBGV_Sub_2009-2014.csv")
+PBGV_POAG_Sub <- PBGV_POAG_Sub %>%
+  select(!X)
+```
+
+
+##Setting up the parameters for AlleleFetch
+```{r}
+#Setting up the genotype and phenotype states
+testGenotypeState <- c("AA", "AB", "BB")
+testPhenotypeState <- c("OK", "NOK")
+
+# Prior allele frequency in (founder) population - #0.309474 taken from AlphaPeel
+PrB <- 0.309474 
+PrA <- 1-PrB
+
+
+# Prior genotype frequencies in (founder) population
+# according to the Hardy-Weinberg's expectation
+testGenoPT <- c(PrA*PrA, 2*PrA*PrB, PrB*PrB)
+
+# Genotype frequencies in individual given the genotype of parents according to Mendel's law
+# and accounting for mutation (via e)
+e <- 0.00000001
+gM_AA_AA <- c(1-2*e+e^2, 2*e-2*e^2, e^2)
+gM_AA_AB <- c(1/2-1/2*e, 1/2, 1/2*e)
+gM_AA_BB <- c(e-e^2, 1-2*e+2*e^2, e-e^2)
+gM_AB_AA <- c(1/2-1/2*e, 1/2, 1/2*e)
+gM_AB_AB <- c(1/4, 1/2, 1/4)
+gM_AB_BB <- c(1/2*e, 1/2, 1/2-1/2*e)
+gM_BB_AA <- c(e-e^2, 1-2*e+2*e^2, e-e^2)
+gM_BB_AB <- c(1/2*e, 1/2, 1/2-1/2*e)
+gM_BB_BB <- c(e^2, 2*e-2*e^2, 1-2*e+e^2)
+
+testMendelianCPT <- matrix(nrow=3, ncol=9)
+testMendelianCPT[, 1] <- gM_AA_AA
+testMendelianCPT[, 2] <- gM_AA_AB
+testMendelianCPT[, 3] <- gM_AA_BB
+testMendelianCPT[, 4] <- gM_AB_AA
+testMendelianCPT[, 5] <- gM_AB_AB
+testMendelianCPT[, 6] <- gM_AB_BB
+testMendelianCPT[, 7] <- gM_BB_AA
+testMendelianCPT[, 8] <- gM_BB_AB
+testMendelianCPT[, 9] <- gM_BB_BB
+
+# Genotype frequencies in individual given the genotype of one parent (Mendel's law with mutation)
+# and base population (Hardy-Weinberg's law)
+gM_AA_unk <- c(PrA-PrA*e, PrB-PrB*e+PrA*e, PrB*e)
+gM_AB_unk <- c(1/2*PrA, 1/2*(PrA+PrB), 1/2*PrB)
+gM_BB_unk <- c(PrA*e, PrA-PrA*e+PrB*e, PrB-PrB*e)
+
+testMendelianCPTOnlyFather <- matrix(nrow=3, ncol= 3)
+testMendelianCPTOnlyFather[,1] <- gM_AA_unk
+testMendelianCPTOnlyFather[,2] <- gM_AB_unk
+testMendelianCPTOnlyFather[,3] <- gM_BB_unk
+
+testMendelianCPTOnlyMother <- testMendelianCPTOnlyFather
+
+# Set of phenotype values
+testPhenotypeState <- c("OK", "NOK")
+
+# Phenotype frequences in individual given the genotype of the individual - phenotype penetrance
+e <- 0.01
+testPhenoPenetranceCPT <- matrix(nrow=2, ncol=3)
+#                               OK   NOK Pheno
+testPhenoPenetranceCPT[,1] <- c(1-e, 0+e) # AA True geno
+testPhenoPenetranceCPT[,2] <- c(1-e, 0+e) # AB
+testPhenoPenetranceCPT[,3] <- c(0+e, 1-e) # BB   
+
+# Genotype frequences in individual given the genotype of the individual - genotype penetrance
+e <- 0.1
+testGenoPenetranceCPT <- matrix(nrow=3, ncol=3)
+#                             AA       AB     BB Observed Geno
+testGenoPenetranceCPT[,1] <-c(1-e-e^2, e,     e^2)     # AA True Geno
+testGenoPenetranceCPT[,2] <-c(e,       1-2*e, e)       # AB
+testGenoPenetranceCPT[,3] <-c(e^2,     e,     1-e-e^2) # BB
+```
+
+#Using LOOCV to collect genotype and allelic concordance for Genotype only
+```{r}
+
+#Start a table to add concordance to (with True genotypes)
+col <- c("IID", "DNA Test", "Genotype Concordance", "Allelic Concordance", "Imputation Dosage", "AA", "AB", "BB")
+df_geno_only <- data.frame(matrix(nrow=0,ncol=length(col)))
+colnames(df_geno_only)=col
+
+#Set up count for loop
+i <- 1
+nID <- count(GenoScale)
+#"True Genotype" result as genotype probabilities
+for(i in 1:nID$n) {
+  ID <- GenoScale[i,1,]
+  Genotype <- GenoScale[i,2,]
+  if (Genotype == "AA") {
+  GenProb <- structure(list(True= c(1, 0, 0)), class = "data.frame", row.names = c(NA, -3))
+  } 
+  if (Genotype == "AB") {
+  GenProb <- structure(list(True= c(0, 1, 0)), class = "data.frame", row.names = c(NA, -3))
+  } 
+  if (Genotype == "BB") {
+  GenProb <- structure(list(True= c(0, 0, 1)), class = "data.frame", row.names = c(NA, -3))
+  } 
+  
+    
+  #Mask the DNA result by removing before running
+  GenoMask <- GenoScale[!GenoScale$IID==ID,]
+  #Run AlleleFetch
+  out <- AlleleFetch(pedigreeData = PedScale,
+                   genotypeState = testGenotypeState,
+                  genotypeData = GenoMask,
+                   phenotypeState = testPhenotypeState,
+                   genoPT = testGenoPT,
+                   mendelianCPT = testMendelianCPT,
+                   mendelianCPTOnlyFather = testMendelianCPTOnlyFather,
+                   mendelianCPTOnlyMother = testMendelianCPTOnlyMother,
+                   genoPenetranceCPT = testGenoPenetranceCPT,
+                   phenoPenetranceCPT = testPhenoPenetranceCPT)
+  #Save results into dataframe
+  Result <- out$result
+  
+  tmp1 <- Result %>%
+    filter(IID == ID) %>%
+    filter(State == "AA") %>%
+    select(State, Freq)
+  tmp2 <- Result %>%
+    filter(IID == ID) %>%
+    filter(State == "AB") %>%
+    select(State, Freq)
+  tmp3 <- Result %>%
+    filter(IID == ID) %>%
+    filter(State == "BB") %>%
+    select(State, Freq)
+  PostGeno <- rbind(tmp1, tmp2, tmp3)
+  Imp_Geno_Dosage <- 0*tmp1$Freq + 1*tmp2$Freq +2*tmp3$Freq
+  
+  #Genotype Concordance
+  GenoCon <- PostGeno$Freq * GenProb
+  GenoConcordance <- sum(GenoCon)
+
+  
+  #Allelic Concordance
+  if (Genotype == "AA"){
+    AM <- structure(list(True= c(1, 0.5, 0)), class = "data.frame", row.names = c(NA, -3))
+  }
+  if (Genotype == "AB"){
+    AM <- structure(list(True= c(0.5, 1, 0.5)), class = "data.frame", row.names = c(NA, -3))
+  }
+  if (Genotype == "BB"){
+    AM <- structure(list(True= c(0, 0.5, 1)), class = "data.frame", row.names = c(NA, -3))
+  }
+
+  AlleCon <- PostGeno$Freq * AM
+  AllelicConcordance <- sum(AlleCon)
+  #Insert table to add to.
+  tmp <- cbind(ID, Genotype, GenoConcordance, AllelicConcordance, Imp_Geno_Dosage, tmp1$Freq, tmp2$Freq, tmp3$Freq)
+  df_geno_only <- rbind(df_geno_only, tmp)
+  
+}
+```
+
+#Using LOOCV to collect genotype and allelic concordance for observed genotype with observed phenotypes
+```{r}
+
+ #Start a table to add concordance to (with True genotypes)
+col <- c("IID", "DNA Test", "Genotype Concordance", "Allelic Concordance","AA", "AB", "BB")
+df_pheno <- data.frame(matrix(nrow=0,ncol=length(col)))
+colnames(df_pheno)=col
+
+#Set up count for loop
+nID <- count(GenoScale)
+#"True Genotype" result as genotype probabilities
+for(i in 1:nID$n) {
+  ID <- GenoScale[i,1,]
+  Genotype <- GenoScale[i,2,]
+  if (Genotype == "AA") {
+  GenProb <- structure(list(True= c(1, 0, 0)), class = "data.frame", row.names = c(NA, -3))
+  } 
+  if (Genotype == "AB") {
+  GenProb <- structure(list(True= c(0, 1, 0)), class = "data.frame", row.names = c(NA, -3))
+  } 
+  if (Genotype == "BB") {
+  GenProb <- structure(list(True= c(0, 0, 1)), class = "data.frame", row.names = c(NA, -3))
+  } 
+  
+    
+  #Mask the DNA result by removing before running
+  GenoMask <- GenoScale[!GenoScale$IID==ID,]
+  #Run AlleleFetch
+  out <- AlleleFetch(pedigreeData = PedScale,
+                   genotypeState = testGenotypeState,
+                   genotypeData = GenoMask,
+                   phenotypeState = testPhenotypeState,
+                   phenotypeData = PhenoScale,
+                   genoPT = testGenoPT,
+                   mendelianCPT = testMendelianCPT,
+                   mendelianCPTOnlyFather = testMendelianCPTOnlyFather,
+                   mendelianCPTOnlyMother = testMendelianCPTOnlyMother,
+                   genoPenetranceCPT = testGenoPenetranceCPT,
+                   phenoPenetranceCPT = testPhenoPenetranceCPT)
+  #Save results into dataframe
+  Result <- out$result
+  
+  tmp1 <- Result %>%
+    filter(IID == ID) %>%
+    filter(State == "AA") %>%
+    select(State, Freq)
+  tmp2 <- Result %>%
+    filter(IID == ID) %>%
+    filter(State == "AB") %>%
+    select(State, Freq)
+  tmp3 <- Result %>%
+    filter(IID == ID) %>%
+    filter(State == "BB") %>%
+    select(State, Freq)
+  PostGeno <- rbind(tmp1, tmp2, tmp3)
+  Imp_Geno_Dosage <- 0*tmp1$Freq + 1*tmp2$Freq +2*tmp3$Freq 
+  
+  #Genotype Concordance
+  GenoCon <- PostGeno$Freq * GenProb
+  GenoConcordance <- sum(GenoCon)
+
+  
+  #Allelic Concordance
+  if (Genotype == "AA"){
+    AM <- structure(list(True= c(1, 0.5, 0)), class = "data.frame", row.names = c(NA, -3))
+  }
+  if (Genotype == "AB"){
+    AM <- structure(list(True= c(0.5, 1, 0.5)), class = "data.frame", row.names = c(NA, -3))
+  }
+  if (Genotype == "BB"){
+    AM <- structure(list(True= c(0, 0.5, 1)), class = "data.frame", row.names = c(NA, -3))
+  }
+
+  AlleCon <- PostGeno$Freq * AM
+  AllelicConcordance <- sum(AlleCon)
+  #Insert table to add to.
+  tmp <- cbind(ID, Genotype, GenoConcordance, AllelicConcordance, Imp_Geno_Dosage, tmp1$Freq, tmp2$Freq, tmp3$Freq)
+  df_pheno <- rbind(df_pheno, tmp)
+  
+}
+
+```
+
+Save file to prevent loss/deletion
+```{r}
+write.csv(df_geno_only, "Geno_13-18_AFAP_LowMutationrate.csv")
+write.csv(df_pheno, "Pheno_13-18_AFAP_LowMutationrate.csv")
+```
+
+## To test/observe any discordance
+```{r}
+test <- merge(PhenoScale, GenoScale, by="IID")
+test <- merge(test, AgePhenoScale, by = "IID")
+table(test$Genotype, test$Phenotype)
+```
+
+## Introduction of new penetrance function that accounts for age
+```{r}
+
+#Additional phenotype function for age at eye test under 4.
+testPhenoPenetranceCPT_Before <- matrix(nrow=2, ncol=3)
+ #                           OK<4 NOK<4 Pheno
+ testPhenoPenetranceCPT_Before[,1] <- c(1-e, 0+e) # AA True geno
+ testPhenoPenetranceCPT_Before[,2] <- c(1-e, 0+e) # AB
+ testPhenoPenetranceCPT_Before[,3] <- c(1-e, 0+e) # BB
+ 
+ #Additional dataset for the age at eye testing
+PBGV_POAG_Sub <- read.csv("/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/PBGV_Sub_2009-2014.csv")
+
+AgePhenoScale <- PBGV_POAG_Sub %>%
+  select(IRN, DOB, EyeTest_Date)
+AgePhenoScale <- AgePhenoScale %>%
+  filter(!EyeTest_Date == "")
+AgePhenoScale$DOB <- as.Date(AgePhenoScale$DOB)
+AgePhenoScale$EyeTest_Date <- as.Date(AgePhenoScale$EyeTest_Date)
+
+AgePhenoScale$Age <- AgePhenoScale$EyeTest_Date - AgePhenoScale$DOB
+AgePhenoScale$Age <- as.numeric(AgePhenoScale$Age) %/% 365.25
+
+AgePhenoScale <- AgePhenoScale %>%
+  select(IRN, Age) %>%
+  rename(IID = "IRN")
+```
+
+
+#Using LOOCV to collect genotype and allelic concordance for observed genotype with observed phenotypes with age penetrance function
+```{r}
+
+
+ #Start a table to add concordance to (with True genotypes)
+col <- c("IID", "DNA Test", "Genotype Concordance", "Allelic Concordance","AA", "AB", "BB")
+df_pheno_Pen <- data.frame(matrix(nrow=0,ncol=length(col)))
+colnames(df_pheno_Pen)=col
+
+#Set up count for loop
+nID <- count(GenoScale)
+#"True Genotype" result as genotype probabilities
+for(i in 1:nID$n) {
+  ID <- GenoScale[i,1,]
+  Genotype <- GenoScale[i,2,]
+  if (Genotype == "AA") {
+  GenProb <- structure(list(True= c(1, 0, 0)), class = "data.frame", row.names = c(NA, -3))
+  } 
+  if (Genotype == "AB") {
+  GenProb <- structure(list(True= c(0, 1, 0)), class = "data.frame", row.names = c(NA, -3))
+  } 
+  if (Genotype == "BB") {
+  GenProb <- structure(list(True= c(0, 0, 1)), class = "data.frame", row.names = c(NA, -3))
+  } 
+  
+    
+  #Mask the DNA result by removing before running
+  GenoMask <- GenoScale[!GenoScale$IID==ID,]
+  #Run AlleleFetch
+  out <- AlleleFetch(pedigreeData = PedScale,
+                   genotypeState = testGenotypeState,
+                   genotypeData = GenoMask,
+                   phenotypeState = testPhenotypeState,
+                   phenotypeData = PhenoScale,
+                   genoPT = testGenoPT,
+                   mendelianCPT = testMendelianCPT,
+                   mendelianCPTOnlyFather = testMendelianCPTOnlyFather,
+                   mendelianCPTOnlyMother = testMendelianCPTOnlyMother,
+                   genoPenetranceCPT = testGenoPenetranceCPT,
+                   phenoPenetranceCPT = testPhenoPenetranceCPT,
+                   phenoPenetranceCPT_Before = testPhenoPenetranceCPT_Before,
+                   agePhenotype = AgePhenoScale)
+  #Save results into dataframe
+  Result <- out$result
+  
+  tmp1 <- Result %>%
+    filter(IID == ID) %>%
+    filter(State == "AA") %>%
+    select(State, Freq)
+  tmp2 <- Result %>%
+    filter(IID == ID) %>%
+    filter(State == "AB") %>%
+    select(State, Freq)
+  tmp3 <- Result %>%
+    filter(IID == ID) %>%
+    filter(State == "BB") %>%
+    select(State, Freq)
+  PostGeno <- rbind(tmp1, tmp2, tmp3)
+  Imp_Geno_Dosage <- 0*tmp1$Freq + 1*tmp2$Freq +2*tmp3$Freq
+  
+  #Genotype Concordance
+  GenoCon <- PostGeno$Freq * GenProb
+  GenoConcordance <- sum(GenoCon)
+
+  
+  #Allelic Concordance
+  if (Genotype == "AA"){
+    AM <- structure(list(True= c(1, 0.5, 0)), class = "data.frame", row.names = c(NA, -3))
+  }
+  if (Genotype == "AB"){
+    AM <- structure(list(True= c(0.5, 1, 0.5)), class = "data.frame", row.names = c(NA, -3))
+  }
+  if (Genotype == "BB"){
+    AM <- structure(list(True= c(0, 0.5, 1)), class = "data.frame", row.names = c(NA, -3))
+  }
+
+  AlleCon <- PostGeno$Freq * AM
+  AllelicConcordance <- sum(AlleCon)
+  #Insert table to add to.
+  tmp <- cbind(ID, Genotype, GenoConcordance, AllelicConcordance, Imp_Geno_Dosage, tmp1$Freq, tmp2$Freq, tmp3$Freq)
+  df_pheno_Pen <- rbind(df_pheno_Pen, tmp)
+  
+}
+
+```
+
+# Save file to prevent loss/deletion
+```{r}
+write.csv(df_pheno_Pen, "Pheno_Pen_AFAPLowMutation.csv")
+```
+
+##Statistical Analysis
+#Pearson (Squared) Correlation Coefficient
+```{r}
+## Observed Genotype Only
+#First add column with Obsv_geno_Dosages
+df_geno_only$ObsGenoDosage <- NA
+df_geno_only <- df_geno_only %>%
+  transform(ObsGenoDosage = ifelse(df_geno_only$Genotype == "AA", 0, df_geno_only$ObsGenoDosage ))
+df_geno_only <- df_geno_only %>%
+  transform(ObsGenoDosage = ifelse(df_geno_only$Genotype == "AB", 1, df_geno_only$ObsGenoDosage ))
+df_geno_only <- df_geno_only %>%
+  transform(ObsGenoDosage = ifelse(df_geno_only$Genotype == "BB", 2, df_geno_only$ObsGenoDosage ))
+#turn to numeric
+df_geno_only$Imp_Geno_Dosage <- as.numeric(df_geno_only$Imp_Geno_Dosage)
+#Correlation - (then Square for R2)
+CorGenoOnlyMask <- cor.test(df_geno_only$Imp_Geno_Dosage, df_geno_only$ObsGenoDosage, method = "pearson")
+
+
+## Observed Genotype and Observed Phenotype
+#First add column with Obsv_geno_Dosages
+df_pheno$ObsGenoDosage <- NA
+df_pheno <- df_pheno %>%
+  transform(ObsGenoDosage = ifelse(df_pheno$Genotype == "AA", 0, df_pheno$ObsGenoDosage ))
+df_pheno <- df_pheno %>%
+  transform(ObsGenoDosage = ifelse(df_pheno$Genotype == "AB", 1, df_pheno$ObsGenoDosage ))
+df_pheno <- df_pheno %>%
+  transform(ObsGenoDosage = ifelse(df_pheno$Genotype == "BB", 2, df_pheno$ObsGenoDosage ))
+#turn to numeric
+df_pheno$Imp_Geno_Dosage <- as.numeric(df_pheno$Imp_Geno_Dosage)
+#Correlation - (then Square for R2)
+CorPhenoMask <- cor.test(df_pheno$Imp_Geno_Dosage, df_pheno$ObsGenoDosage, method = "pearson")
+
+## Observed Genotype and Observed Phenotype with Age-Adjusted Penetrance
+#First add column with Obsv_geno_Dosages
+df_pheno_Pen$ObsGenoDosage <- NA
+df_pheno_Pen <- df_pheno_Pen %>%
+  transform(ObsGenoDosage = ifelse(df_pheno_Pen$Genotype == "AA", 0, df_pheno_Pen$ObsGenoDosage ))
+df_pheno_Pen <- df_pheno_Pen %>%
+  transform(ObsGenoDosage = ifelse(df_pheno_Pen$Genotype == "AB", 1, df_pheno_Pen$ObsGenoDosage ))
+df_pheno_Pen <- df_pheno_Pen %>%
+  transform(ObsGenoDosage = ifelse(df_pheno_Pen$Genotype == "BB", 2, df_pheno_Pen$ObsGenoDosage ))
+#turn to numeric
+df_pheno_Pen$Imp_Geno_Dosage <- as.numeric(df_pheno_Pen$Imp_Geno_Dosage)
+#Correlation - (then Square for R2)
+CorPhenoPenMask <- cor.test(df_pheno_Pen$Imp_Geno_Dosage, df_pheno_Pen$ObsGenoDosage, method = "pearson")
+
+
+```
+
+#Testing normality
+```{r}
+shapiro.test(df_geno_only$AllelicConcordance)
+shapiro.test(df_pheno$GenoConcordance)
+shapiro.test(df_pheno_Pen$GenoConcordance)
+qqnorm(df_geno_only$GenoConcordance)
+qqline(df_geno_only$GenoConcordance)
+qqnorm(df_pheno$GenoConcordance)
+qqline(df_pheno$GenoConcordance)
+qqnorm(df_pheno_Pen$GenoConcordance)
+qqline(df_pheno_Pen$GenoConcordance)
+```
+
+#Running the Kruskal Test
+```{r}
+#Kruskal.test used to test significance between the three models (does not assume a distribution, non-parametric)
+#Genotype Concordance
+data_list <- list(df_geno_only$GenoConcordance, df_pheno$GenoConcordance, df_pheno_Pen$GenoConcordance)
+kruskal.test(data_list)
+#Allele Concordance
+data_list <- list(df_geno_only$AllelicConcordance, df_pheno$AllelicConcordance, df_pheno_Pen$AllelicConcordance)
+kruskal.test(data_list)
+```
+
+#Plotting barchart with error bars
+```{r}
+#Find the mean and standard deviation for each of the three models (as percent)
+#Genotype Concordance
+mean_geno_GC <- mean(df_geno_only$GenoConcordance)*100
+sd_geno_GC <- sd(df_geno_only$GenoConcordance)*100
+
+mean_pheno_GC <- mean(df_pheno$GenoConcordance)*100
+sd_pheno_GC <- sd(df_pheno$GenoConcordance)*100
+
+mean_phenoPen_GC <- mean(df_pheno_Pen$GenoConcordance)*100
+sd_phenoPen_GC <- sd(df_pheno_Pen$GenoConcordance)*100
+
+#Allele Concordance
+mean_geno_AC <- mean(df_geno_only$AllelicConcordance)*100
+sd_geno_AC <- sd(df_geno_only$AllelicConcordance)*100
+
+mean_pheno_AC <- mean(df_pheno$AllelicConcordance)*100
+sd_pheno_AC <- sd(df_pheno$AllelicConcordance)*100
+
+mean_phenoPen_AC <- mean(df_pheno_Pen$AllelicConcordance)*100
+sd_phenoPen_AC <- sd(df_pheno_Pen$AllelicConcordance)*100
+
+#Combine into one dataframe
+tmp <- cbind("1", "GC", mean_geno_GC, sd_geno_GC)
+tmp2 <- cbind("1", "AC", mean_geno_AC, sd_geno_AC)
+
+tmp3 <- cbind("2", "GC", mean_pheno_GC, sd_pheno_GC)
+tmp4 <- cbind("2", "AC", mean_pheno_AC, sd_pheno_AC)
+
+tmp5 <- cbind("3", "GC", mean_phenoPen_GC, sd_phenoPen_GC)
+tmp6 <- cbind("3", "AC", mean_phenoPen_AC, sd_phenoPen_AC)
+
+
+summary <- data.frame(rbind(tmp, tmp2, tmp3, tmp4, tmp5, tmp6))
+summary$mean_geno_GC <- as.numeric(summary$mean_geno_GC)
+summary$sd_geno_GC <- as.numeric(summary$sd_geno_GC)
+
+ggplot(summary, aes(V1, mean_geno_GC, fill = V2)) +geom_bar(stat = "identity", color = "black", position = position_dodge())+
+  geom_errorbar(aes(ymin = mean_geno_GC-sd_geno_GC, ymax = mean_geno_GC + sd_geno_GC), width =.2, position=position_dodge(.9)) +
+  xlab("Model") + scale_x_discrete(labels = c("1", "2", "3")) +
+  scale_fill_manual(values = c("#CC79A7","#7205FF"), labels = c("Allele Concordance", "Genotype Concordance"), name = "") +
+  ylab("Concordance (%)")
+```
+
+
+#Plotting histograms for Genotype and Allelic Concordance
+```{r}
+df_geno_only %>% ggplot() + aes(GenoConcordance)+ geom_histogram()
+df_pheno %>% ggplot() + aes(GenoConcordance)+ geom_histogram()
+df_pheno_Pen %>% ggplot() + aes(GenoConcordance)+ geom_histogram()
+
+df_geno_only$GenoConcordance <- as.numeric(df_geno_only$GenoConcordance)
+df_pheno$GenoConcordance <- as.numeric(df_pheno$GenoConcordance)
+df_pheno_Pen$GenoConcordance <- as.numeric(df_pheno_Pen$GenoConcordance)
+
+df_geno_only$GenoConcordance100 <- df_geno_only$GenoConcordance*100
+df_pheno$GenoConcordance100 <- df_pheno$GenoConcordance*100
+df_pheno_Pen$GenoConcordance100 <- df_pheno_Pen$GenoConcordance*100
+
+a <- ggplot(df_geno_only) + aes(GenoConcordance100, fill = Genotype) + geom_histogram(bins = 40, na.rm = TRUE) + scale_fill_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BB")) + xlab("Genotype Concordance (%)")+ xlim(-1, 101) +ylim(0, 20)
+b <- ggplot(df_pheno) + aes(GenoConcordance100, fill = Genotype) + geom_histogram(bins = 40, na.rm = TRUE) + scale_fill_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BB")) + xlab("Genotype Concordance (%)") + xlim(-1, 101) +ylim(0, 20)
+c <- ggplot(df_pheno_Pen) + aes(GenoConcordance100, fill = Genotype) + geom_histogram(bins = 40, na.rm = TRUE) + scale_fill_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BB")) + xlab("Genotype Concordance (%)") + xlim(-1, 101) +ylim(0, 20)
+
+
+ggarrange(a, b, c, labels = c("1", "2", "3"), common.legend = TRUE, legend = "right", nrow = 3, ncol = 1)
+
+#Allele Concordance
+df_geno_only$AllelicConcordance <- as.numeric(df_geno_only$AllelicConcordance)
+df_pheno$AllelicConcordance <- as.numeric(df_pheno$AllelicConcordance)
+df_pheno_Pen$AllelicConcordance <- as.numeric(df_pheno_Pen$AllelicConcordance)
+df_geno_only$AllelicConcordance100 <- df_geno_only$AllelicConcordance*100
+df_pheno$AllelicConcordance100 <- df_pheno$AllelicConcordance*100
+df_pheno_Pen$AllelicConcordance100 <- df_pheno_Pen$AllelicConcordance*100
+
+a <- ggplot(df_geno_only) + aes(AllelicConcordance100, fill = Genotype) + geom_histogram(bins = 40, na.rm = TRUE) + scale_fill_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BB")) + xlab("Allele Concordance (%)") + xlim(-1, 101)
+b <- ggplot(df_pheno) + aes(AllelicConcordance100, fill = Genotype) + geom_histogram(bins = 40, na.rm = TRUE) + scale_fill_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BB")) + xlab("Allele Concordance (%)") + xlim(-1, 101)
+c <- ggplot(df_pheno_Pen) + aes(AllelicConcordance100, fill = Genotype) + geom_histogram(bins = 40, na.rm = TRUE) + scale_fill_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BB")) + xlab("Allelic Concordance (%)") + xlim(-1, 101)
+
+
+ggarrange(a, b, c, labels = c("1", "2", "3"), common.legend = TRUE, legend = "right", nrow = 3, ncol = 1)
+
+```
+

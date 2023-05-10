@@ -1,0 +1,566 @@
+---
+title: "Full Pedigree Analysis"
+output: html_document
+date: '2023-05-10'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Clean session
+rm(list = ls())
+install.packages("ggforce")
+library(tidyverse)
+library(ggplot2)
+library(ggforce)
+library(reshape2)
+library(ggpubr)
+```
+
+
+##Plotting just the DNA tests and hereditary status
+Insert the full pedigree with and without hereditary status
+```{r}
+PBGV_POAG <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/FullCleanedData.csv")
+```
+
+#Pedigree visualisation - Full pedigree
+```{r}
+library(visPedigree)
+
+FullPedDiag <- PBGV_POAG %>%
+  select(IRN,IRN_sire,IRN_dam,Sex) %>%
+  transform(Sex=ifelse(Sex =="Dog", "male", "female"))
+FullPedDiag <- tidyped(FullPedDiag)
+visped(FullPedDiag, compact = TRUE, cex = 0.83, file = "FullPedDiag.pdf")
+
+```
+
+Prepare the data for graphs
+```{r}
+rawData_DOB <- PBGV_POAG[!PBGV_POAG$DNA_result == "",]
+
+# Change DOB format to date
+rawData_DOB$DOB <- as.Date(rawData_DOB$DOB)
+
+# Add year and month columns
+rawData_DOB$year <- format(rawData_DOB$DOB, "%Y")
+rawData_DOB$month <- format(rawData_DOB$DOB, "%m")
+rawData_DOB$year_month <- format(rawData_DOB$DOB, "%Y-%m")
+str(rawData_DOB)
+
+#By year - using only DNA test and hereditary status
+test <- rawData_DOB %>%
+  select(year, DNA_result)
+
+i <- 1995
+df_DNA_DOB <- data.frame(matrix(nrow=0,ncol=4))
+for (i in i: 2022){
+  x <- test[test$year == i,]
+  x <- x[!is.na(x$year),]
+  t <- as.numeric(count(x))
+  Clr <- as.numeric(count(x[x$DNA_result == "Clear" | x$DNA_result == "Hereditary Clear",]))
+  Clr <- Clr/t
+  Cr <- as.numeric(count(x[x$DNA_result == "Carrier" | x$DNA_result == "Hereditary Carrier",]))
+  Cr <- Cr/t
+  Af <- as.numeric(count(x[x$DNA_result == "Affected" | x$DNA_result == "Hereditary Affected",]))
+  Af <- Af/t
+  
+  tmp <- cbind(i, Clr, Cr, Af)
+  df_DNA_DOB <- rbind(df_DNA_DOB, tmp)
+}
+
+df_DNA_DOB <- na.omit(df_DNA_DOB)
+df_DNA_DOB <- df_DNA_DOB %>%
+  rename(Year = "i", AA = "Clr", AB = "Cr", BB="Af")
+
+df_DNA_DOB <- melt(df_DNA_DOB, id.vars="Year", variable.name = "Genotype" )
+```
+
+
+Lets plot a graph with the data
+```{r}
+df_DNA_DOB %>% ggplot(aes(Year, value, group=Genotype, col=Genotype))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Mean Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BB"))
+
+# ^^ not particularly informative due to the relatively low records per year. Especially earlier on.
+```
+
+
+Instead - lets plot the mutation allele frequency following Lewis and Mellersh
+```{r}
+test <- rawData_DOB %>%
+  select(year, DNA_result)
+
+i <- 1995
+df_DNA_DOB <- data.frame(matrix(nrow=0,ncol=2))
+df_T <- data.frame(matrix(nrow=0, ncol=2))
+for (i in i: 2022){
+  x <- test[test$year == i,]
+  x <- x[!is.na(x$year),]
+  t <- as.numeric(count(x))
+  Clr <- as.numeric(count(x[x$DNA_result == "Clear" | x$DNA_result == "Hereditary Clear",]))
+  Cr <- as.numeric(count(x[x$DNA_result == "Carrier" | x$DNA_result == "Hereditary Carrier",]))
+  Af <- as.numeric(count(x[x$DNA_result == "Affected" | x$DNA_result == "Hereditary Affected",]))
+  mf <- ((2*Af)+Cr)/t
+  
+  tmp <- cbind(i, mf)
+  df_DNA_DOB <- rbind(df_DNA_DOB, tmp)
+  tmp <- cbind(i, t)
+  df_T <- rbind(df_T, tmp)
+}
+
+df_DNA_DOB <- na.omit(df_DNA_DOB)
+df_DNA_DOB <- df_DNA_DOB %>%
+  rename(Year = "i", Mutation_Frequency = "mf")
+```
+
+Plot the graph
+```{r}
+df_DNA_DOB %>% ggplot(aes(Year, Mutation_Frequency)) +
+  geom_line(size=1, col = "#9834FF") +
+  xlab("Year of Birth") +
+  ylab("Mutation Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5))
+
+#Restrict to 2000 in line with Lewis and Mellersh
+test <- df_DNA_DOB[!df_DNA_DOB < 2000,]
+test %>% ggplot(aes(Year, Mutation_Frequency)) +
+  geom_line(size=1, col = "#9834FF") +
+  xlab("Year of Birth") +
+  ylab("Mutation Frequency") +
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5))+
+  geom_vline(xintercept = 2015, linetype = "dashed", colour = "#D35FB7")
+```
+
+Plotting the number of DNA tests and information per year
+```{r}
+ggplot(df_T, aes(i,t))+ 
+  geom_point() +
+  geom_line() +
+  xlab("Year of Birth") +
+  ylab("Number of Individuals with DNA Information")
+```
+
+Plotting the number of DNA tests per year since first published in 2015
+```{r}
+
+#Remove hereditary status
+PBGV_POAG_DNA <- PBGV_POAG %>%
+  transform(DNA_result=ifelse(DNA_result=="Hereditary Clear", NA, DNA_result))
+
+PBGV_POAG_DNA <- PBGV_POAG_DNA %>%
+  transform(DNA_result=ifelse(DNA_result=="Hereditary Carrier", NA, DNA_result))
+
+PBGV_POAG_DNA <- PBGV_POAG_DNA %>%
+  transform(DNA_result=ifelse(DNA_result=="Hereditary Affected", NA, DNA_result))
+
+PBGV_POAG_DNA$DOB <- as.Date(PBGV_POAG_DNA$DOB)
+PBGV_POAG_DNA$YearofBirth <- format(PBGV_POAG_DNA$DOB, "%Y")
+DOB_PBGV <- PBGV_POAG_DNA[!is.na(PBGV_POAG_DNA$YearofBirth),]
+
+DNA_Tests <- PBGV_POAG_DNA %>%
+  select(DNA_result, DNA_TestDate)
+
+DNA_Tests <- DNA_Tests[!DNA_Tests$DNA_result == "",]
+DNA_Tests <- DNA_Tests[!is.na(DNA_Tests$DNA_result),]
+
+# Change DOB format to date
+DNA_Tests$DNA_TestDate <- as.Date(DNA_Tests$DNA_TestDate)
+
+# Add year and month columns
+DNA_Tests$year <- format(DNA_Tests$DNA_TestDate, "%Y")
+DNA_Tests$year <- as.numeric(DNA_Tests$year)
+
+Testperyear <- data.frame(matrix(nrow=0, ncol=2))
+NumberBornperYear <- data.frame(matrix(nrow = 0, ncol = 2))
+i <-1972
+for(i in 1972:2022){
+    x <- DNA_Tests %>%
+    filter(year == i)
+    z <- DOB_PBGV %>%
+      filter(YearofBirth == i)
+    no <- as.numeric(count(z))
+    b <- cbind.data.frame(i, no)
+    n <- as.numeric(count(x))
+    y <- cbind.data.frame(i,n)
+    Testperyear <- rbind(Testperyear, y)
+    NumberBornperYear <- rbind(NumberBornperYear, b)
+}
+
+ggplot(Testperyear, aes(i,n))+ geom_point() +geom_line()+
+  ylab("No. of DNA Tests")+xlab("Year")+xlim(c(2015,2022))
+
+ggplot(NumberBornperYear, aes(i, no)) + geom_point() + geom_line()+
+  ylab("Number of Dogs Born")+xlab("Year")+xlim(c(1972,2022))
+```
+
+## Full Pedigree from AlphaPeel
+Insert the file with the genotype probabilities
+```{r}
+setwd(dir="/Users/roscraddock/Documents/Agriculture Uni/Year 3/NERC Placement/AlphaPeel Practice/AlphaPeel-master/AlphaPeel/outputs/Full Ped")
+
+#Insert the haps (geno probabilities) file
+GenoProbs_AlphaPeel <- read.csv("SingleLocus.haps", header = FALSE, sep = " ", col.names = c("IID", "Genotype_Probabilities"))
+
+```
+
+Adding the Genotype States
+```{r}
+#Add the genotype states/values
+x <- c("AA", "AB", "BA", "BB")
+x <- data.frame(x)
+x <- x %>%
+  rename(Geno_State = "x")
+test <- x
+ID <- ((as.numeric(count(GenoProbs_AlphaPeel)))/4)-1
+
+for(i in 1:ID) {
+test <- rbind(test, x)
+}
+
+GenoProbs_AlphaPeel <- cbind(GenoProbs_AlphaPeel, test)
+```
+
+Converting from tall to wide table format
+```{r}
+GenoProbs_AlphaPeel <- GenoProbs_AlphaPeel %>%
+    pivot_wider(names_from = Geno_State,
+                values_from = Genotype_Probabilities)
+
+#Remove "mother of.." and "father of..."
+GenoProbs_AlphaPeel$IID <- as.numeric(GenoProbs_AlphaPeel$IID)
+GenoProbs_AlphaPeel <- GenoProbs_AlphaPeel %>%
+  filter(!is.na(IID))
+
+#Add in the DOB
+Alpha_Peel_Recode <- read.csv("/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/fullPBGV_Alpha_Peel_Recode.csv")
+Alpha_Peel_Recode <- Alpha_Peel_Recode %>%
+  select(!X)
+
+DOB <-Alpha_Peel_Recode %>%
+  select(IID, DOB)
+
+GenoProbs_AlphaPeel <- merge(GenoProbs_AlphaPeel, DOB, by="IID")
+GenoProbs_AlphaPeel$IID <- as.numeric(GenoProbs_AlphaPeel$IID)
+
+#Since the order of alleles is not relevant in this example, add columns Aa and aA together
+GenoProbs_AlphaPeel$Het <- GenoProbs_AlphaPeel$BA + GenoProbs_AlphaPeel$AB
+GenoProbsPhase_AlphaPeel <- GenoProbs_AlphaPeel
+GenoProbs_AlphaPeel <- GenoProbs_AlphaPeel %>%
+  select(IID, AA, Het, BB, DOB) %>%
+  rename(AB = "Het")
+
+```
+
+##Plot the phased genotype probabilities averaged per birth year
+```{r}
+PhasedPlot <-GenoProbsPhase_AlphaPeel %>% 
+  filter(!is.na(DOB))
+#Removed 814 individuals
+
+# Change DOB format to date
+PhasedPlot$DOB <- as.Date(PhasedPlot$DOB)
+
+# Add year and month columns
+PhasedPlot$year <- format(PhasedPlot$DOB, "%Y")
+
+#By year
+DOB_Plot_Year <- PhasedPlot %>%
+  group_by(year) %>%
+  summarise(mean(AA)) 
+DOB_Plot_Year2 <- PhasedPlot %>%
+  group_by(year) %>%
+  summarise(mean(AB))
+DOB_Plot_Year3 <- PhasedPlot %>%
+  group_by(year) %>%
+  summarise(mean(BA))
+DOB_Plot_Year4 <- PhasedPlot %>%
+  group_by(year) %>%
+  summarise(mean(BB))
+
+PhasedPlot <- cbind(DOB_Plot_Year, DOB_Plot_Year2, DOB_Plot_Year3, DOB_Plot_Year4)
+
+#Reduce to only one column for year
+PhasedPlot <- PhasedPlot[,c(1,2,4,6, 8),]
+
+PhasedPlot <- melt(PhasedPlot, id.vars="year", variable.name = "State" )
+
+my_labels <- c("1976","", "1978", "", "1980", "", "1982", "", "1984", "", "1986", "", "1988", "","1990", "", "1992", "", "1994", "", "1996", "", "1998", "", "2000", "", "2002", "", "2004","", "2006", "", "2008", "", "2010", "", "2012", "", "2014","", "2016","", "2018","", "2020", "", "2022")
+
+# Plotting the Mean frequency of states per year (1972 to January 2023)
+PhasedPlot %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Population Frequency") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.5)) +
+  scale_x_discrete(breaks = seq(1976, 2022), labels = my_labels) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#56B4E9", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BA", "BB"))+
+  geom_vline(xintercept = "1995", linetype = "dotted") +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+
+```
+
+## Plot the genotype probabilities averaged per birth year.
+```{r}
+#Remove individuals with no recorded date of birth
+DOB_Plot <- GenoProbs_AlphaPeel %>% 
+  filter(!is.na(DOB))
+#Removed 814 individuals
+
+# Change DOB format to date
+DOB_Plot$DOB <- as.Date(DOB_Plot$DOB)
+
+# Add year and month columns
+DOB_Plot$year <- format(DOB_Plot$DOB, "%Y")
+DOB_Plot$month <- format(DOB_Plot$DOB, "%m")
+DOB_Plot$year_month <- format(DOB_Plot$DOB, "%Y-%m")
+str(DOB_Plot)
+
+#By year
+DOB_Plot_Year <- DOB_Plot %>%
+  group_by(year) %>%
+  summarise(mean(AA)) 
+DOB_Plot_Year2 <- DOB_Plot %>%
+  group_by(year) %>%
+  summarise(mean(AB))
+DOB_Plot_Year3 <- DOB_Plot %>%
+  group_by(year) %>%
+  summarise(mean(BB))
+
+DOB_Plot_Year <- cbind(DOB_Plot_Year, DOB_Plot_Year2, DOB_Plot_Year3)
+
+#Reduce to only one column for year
+DOB_Plot_Year <- DOB_Plot_Year[,c(1,2,4,6),]
+
+#Move back into the tall format
+DOB_Plot_Year <- melt(DOB_Plot_Year, id.vars="year", variable.name = "State" )
+
+my_labels <- c("1976","", "1978", "", "1980", "", "1982", "", "1984", "", "1986", "", "1988", "","1990", "", "1992", "", "1994", "", "1996", "", "1998", "", "2000", "", "2002", "", "2004","", "2006", "", "2008", "", "2010", "", "2012", "", "2014","", "2016","", "2018","", "2020", "", "2022")
+
+# Plotting the Mean frequency of states per year (1972 to January 2023)
+DOB_Plot_Year %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Population Frequency") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.5)) +
+  scale_x_discrete(breaks = seq(1976, 2022), labels = my_labels) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BB"))+
+  geom_vline(xintercept = "1995", linetype = "dotted") +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+
+#breaks=seq(1976, 2022, 2)
+#Plot by Mean frequency of states per year from 1995 (earliest DOB with DNA test)
+test <- DOB_Plot_Year[!DOB_Plot_Year$year < 1995,]
+test$State <- as.character(test$State)
+test %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Population Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BB")) +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+
+#Save a graph for dates 2009 to June 2014
+test <- DOB_Plot[!DOB_Plot$DOB < "2008-12-31",]
+test <- test[!test$DOB > "2014-06-30",]
+
+#By year
+tmp <- test %>%
+  group_by(year) %>%
+  summarise(mean(AA))
+tmp2 <- test %>%
+  group_by(year) %>%
+  summarise(mean(AB))
+tmp3 <- test %>%
+  group_by(year) %>%
+  summarise(mean(BB))
+
+Full_Sub <- cbind(tmp, tmp2, tmp3)
+
+#Reduce to only one column for year
+Full_Sub <- Full_Sub[,c(1,2,4,6),]
+
+#Move back into the tall format
+Full_Sub <- melt(Full_Sub, id.vars="year", variable.name = "State" )
+
+# Plotting the Mean frequency of states per year (1972 to January 2023)
+FullSubPlot <- Full_Sub %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Population Frequency") +
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BB")) + ylim(0,1)
+
+
+```
+
+#Add a line for the mean minor allele frequency
+```{r}
+#First Find the minor allele frequency per year using all the individuals
+DOB_Plot_MA <- DOB_Plot_Year %>%
+  pivot_wider(names_from = "State", values_from = "value")
+  
+DOB_Plot_MA$MAF <- DOB_Plot_MA$`mean(BB)`+ DOB_Plot_MA$`mean(AB)`* 0.5
+
+DOB_Plot_MA <- melt(DOB_Plot_MA, id.vars="year", variable.name = "State" )
+
+DOB_Plot_MA$State <- factor(DOB_Plot_MA$State, levels = c("mean(AA)", "mean(AB)", "mean(BB)", "MAF"))
+
+# Plotting the Mean frequency of states per year (1972 to January 2023
+TP <- DOB_Plot_MA %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Mean Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#D55E00", "#7C788A"), name = "Genotype", labels = c("AA", "AB", "BB", "Mutation Allele (B)"))+
+  geom_vline(xintercept = "1995", linetype = "dotted") +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+
+ggarrange(TP, nrow = 1, ncol = 1, legend = "none")
+
+#Plot by Mean frequency of states per year from 2010 (When DNA information per year exceeds 30)
+test <- DOB_Plot_MA[!DOB_Plot_MA$year < 2010,]
+test$State <- as.character(test$State)
+test$State <- factor(test$State, levels = c("mean(AA)", "mean(AB)", "mean(BB)", "MAF"))
+test %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Mean Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#D55E00", "#7C788A"), name = "Genotype", labels = c("AA", "AB", "BB", "Mutation Allele Frequency")) +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+
+#Plot the same time line with the estimated mutation frequencies from DNA test and hereditary status
+test <- df_DNA_DOB[!df_DNA_DOB < 2010,]
+test %>% ggplot(aes(Year, Mutation_Frequency)) +
+  geom_line(size=1, col = "#9834FF") +
+  xlab("Year of Birth") +
+  ylab("Mutation Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5))
+
+
+```
+
+#Add in the prediction using DNA test and hereditary status only
+```{r}
+DOB_Plot_MA <- DOB_Plot_MA %>%
+  pivot_wider(names_from = "State", values_from = "value")
+
+DOB_Plot_MA_Wide <- merge( DOB_Plot_MA, df_DNA_DOB, by.x = "year", by.y = "Year", all.x = TRUE)
+
+
+```
+
+#Add minor allele frequency from DNA test and hereditary status to the above graph
+```{r}
+test <- melt(DOB_Plot_MA_Wide, id.vars = "year", variable.name = "State")
+test <- test[!test$year < 2000,]
+test$State <- factor(test$State, levels = c("mean(AA)", "mean(AB)", "mean(BB)", "MAF", "Mutation_Frequency"))
+
+test %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Population Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#D55E00", "#7C788A", "#9834FF"), name = "Genotype", labels = c("AA", "AB", "BB", "Imputed Mutation Allele Frequency", "DNA Information Mutation Allele Frequency")) +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+```
+
+#Compare with the minor allele frequency from the DNA test and hereditary data.
+```{r}
+
+test <- DOB_Plot_MA_Wide %>%
+  select(year, MAF, Mutation_Frequency)
+
+test <- melt(test, id.vars = "year", variable.name = "State")
+
+test <- test[test$year > 1999,]
+test$State <- factor(test$State, levels = c("Mutation_Frequency", "MAF"))
+
+
+test %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Estimated Mutation Frequency") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#9834FF","#7C788A"), name = "", labels = c("DNA Information", "Full Pedigree Imputation")) +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+
+```
+
+#Graph with the imputed minor and major allele frequencies
+```{r}
+DOB_Plot_MA$MjAF <- 1 - DOB_Plot_MA$MAF
+
+test <- DOB_Plot_MA %>%
+  select(year, MAF, MjAF)
+
+test <- melt(test, id.vars = "year", variable.name = "State")
+test$State <- factor(test$State, levels = c("MAF", "MjAF"))
+
+test %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Estimated Allele Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#7C788A", "#44AA99"), name = "", labels = c("Disease-causing Allele (B)", "Normal Allele (A)")) +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+
+```
+
+#Validation of full pedigree imputation in AlphaPeel - comparing hereditary status with genotype dosages by pearson coefficient
+```{r}
+
+#Insert full pedigree with DNA test and hereditary status in the same order as AlphaPeel
+Val_Alpha_Peel <- read_csv("/Users/roscraddock/Documents/PBGV_Full_Val_Alpha.csv")
+#Insert the genotype dosages
+FullPed_GenDos <- read.csv("/Users/roscraddock/Documents/Agriculture Uni/Year 3/NERC Placement/AlphaPeel Practice/AlphaPeel-master/AlphaPeel/outputs/Full Ped/SingleLocus.dosages", header = FALSE, sep = " ", col.names = c("IID", "Genotype_Dosage"))
+#Merge Val_Alpha with dosages
+Val_Alpha_Peel <- merge(FullPed_GenDos, Val_Alpha_Peel, by="IID")
+
+#Select only those with hereditary status
+tmp <- Val_Alpha_Peel %>%
+  filter(Genotype =="Hereditary Clear") %>%
+  transform(Genotype = 0)
+tmp1 <- Val_Alpha_Peel %>%
+  filter(Genotype == "Hereditary Carrier")%>%
+  transform(Genotype = 1)
+tmp2 <- Val_Alpha_Peel %>%
+  filter(Genotype == "Hereditary Affected") %>%
+  transform(Genotype = 2)
+
+Val_Alpha_Peel <- rbind(tmp, tmp1, tmp2)
+
+Val_Alpha_Peel <- Val_Alpha_Peel %>%
+  select(IID, Genotype_Dosage, Genotype, DOB)
+
+
+#For all hereditary status (374 individuals)
+Val_Alpha_Peel$Genotype <- as.numeric(Val_Alpha_Peel$Genotype)
+cor <- cor.test(Val_Alpha_Peel$Genotype_Dosage, Val_Alpha_Peel$Genotype, method = "pearson")
+
+Val_Alpha_Peel$Genotype <- as.character(Val_Alpha_Peel$Genotype)
+
+Val_Alpha_Peel %>% ggplot() + aes(Genotype, Genotype_Dosage)+ geom_sina() +
+  ylab("Imputed Genotype Dosages") + xlab("Genotype Dosages from Hereditary Status")
+
+
+#For those in 2022
+Val_Alpha_Peel$DOB <- as.Date(Val_Alpha_Peel$DOB, "%Y-%m-%d")
+Val_Alpha_Peel$year <- format(Val_Alpha_Peel$DOB, "%Y")
+Val_Alpha_Peel_2022 <- Val_Alpha_Peel[Val_Alpha_Peel$year == 2022,]
+Val_Alpha_Peel_2022$Genotype <- as.numeric(Val_Alpha_Peel_2022$Genotype)
+Val_Alpha_Peel_2022 <- Val_Alpha_Peel_2022[!is.na(Val_Alpha_Peel_2022$DOB),]
+cor <- cor(Val_Alpha_Peel_2022$Genotype, Val_Alpha_Peel_2022$Genotype_Dosage, method = "pearson")
+
+Val_Alpha_Peel_2022$Genotype <- as.character(Val_Alpha_Peel_2022$Genotype)
+
+Val_Alpha_Peel_2022 %>% ggplot() + aes(Genotype, Genotype_Dosage)+ geom_sina() +
+  ylab("Imputed Genotype Dosages") + xlab("Genotype Dosages from Hereditary Status")
+
+```
+

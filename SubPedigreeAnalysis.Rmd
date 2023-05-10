@@ -1,0 +1,536 @@
+---
+title: "Sub-Pedigree Analysis"
+output: html_document
+date: '2023-05-10'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Clean session
+rm(list = ls())
+library(tidyverse)
+library(ggplot2)
+library(ggforce)
+library(reshape2)
+library(ggpubr)
+
+# Install AlleleFetch
+if (FALSE) {
+  setRepositories() # choose CRAN and BioC
+  install.packages(pkg = c("gRain", "devtools"), dep = TRUE)
+  # PR that fixed the repeatPattern() data issue
+  # https://github.com/hojsgaard/gRain/pull/9
+  devtools::install_github(repo = "https://github.com/gregorgorjanc/gRain")
+}
+# Load package
+library(package = "gRain")
+
+# User defined functions
+
+source(file = "AlleleFetch.R")
+```
+
+#Insert the Sub-Pedigree
+```{r}
+GenoScale <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_Geno_2009-2014.csv")
+GenoScale <- GenoScale %>%
+  select(!X)
+PhenoScale <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_Pheno_2009-2014.csv")
+PhenoScale <- PhenoScale %>%
+  select(!X)
+PedScale <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_Ped_2009-2014.csv")
+PedScale <- PedScale %>%
+  select(!X)
+PBGV_POAG_Sub <- read.csv("/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/PBGV_Sub_2009-2014.csv")
+PBGV_POAG_Sub <- PBGV_POAG_Sub %>%
+  select(!X)
+```
+
+#Pedigree visualisation - Sub pedigree
+```{r}
+library(visPedigree)
+
+SubPedDiag <- PBGV_POAG_Sub %>%
+  select(IRN,IRN_sire,IRN_dam,Sex) %>%
+  transform(Sex=ifelse(Sex =="Dog", "male", "female"))
+SubPedDiag <- tidyped(SubPedDiag)
+visped(SubPedDiag, compact = TRUE, cex = 0.83, file = "SubPedDiag.pdf")
+```
+
+#Setting Up for AlleleFetch
+```{r}
+#Setting up the genotype and phenotype states
+testGenotypeState <- c("AA", "AB", "BB")
+testPhenotypeState <- c("OK", "NOK")
+
+# Prior allele frequency in (founder) population - #0.309474 taken from AlphaPeel
+PrB <- 0.309474 
+PrA <- 1-PrB
+
+
+# Prior genotype frequencies in (founder) population
+# according to the Hardy-Weinberg's expectation
+testGenoPT <- c(PrA*PrA, 2*PrA*PrB, PrB*PrB)
+
+# Genotype frequencies in individual given the genotype of parents according to Mendel's law
+# and accounting for mutation (via e)
+e <- 0.00000001
+gM_AA_AA <- c(1-2*e+e^2, 2*e-2*e^2, e^2)
+gM_AA_AB <- c(1/2-1/2*e, 1/2, 1/2*e)
+gM_AA_BB <- c(e-e^2, 1-2*e+2*e^2, e-e^2)
+gM_AB_AA <- c(1/2-1/2*e, 1/2, 1/2*e)
+gM_AB_AB <- c(1/4, 1/2, 1/4)
+gM_AB_BB <- c(1/2*e, 1/2, 1/2-1/2*e)
+gM_BB_AA <- c(e-e^2, 1-2*e+2*e^2, e-e^2)
+gM_BB_AB <- c(1/2*e, 1/2, 1/2-1/2*e)
+gM_BB_BB <- c(e^2, 2*e-2*e^2, 1-2*e+e^2)
+
+testMendelianCPT <- matrix(nrow=3, ncol=9)
+testMendelianCPT[, 1] <- gM_AA_AA
+testMendelianCPT[, 2] <- gM_AA_AB
+testMendelianCPT[, 3] <- gM_AA_BB
+testMendelianCPT[, 4] <- gM_AB_AA
+testMendelianCPT[, 5] <- gM_AB_AB
+testMendelianCPT[, 6] <- gM_AB_BB
+testMendelianCPT[, 7] <- gM_BB_AA
+testMendelianCPT[, 8] <- gM_BB_AB
+testMendelianCPT[, 9] <- gM_BB_BB
+
+# Genotype frequencies in individual given the genotype of one parent (Mendel's law with mutation)
+# and base population (Hardy-Weinberg's law)
+gM_AA_unk <- c(PrA-PrA*e, PrB-PrB*e+PrA*e, PrB*e)
+gM_AB_unk <- c(1/2*PrA, 1/2*(PrA+PrB), 1/2*PrB)
+gM_BB_unk <- c(PrA*e, PrA-PrA*e+PrB*e, PrB-PrB*e)
+
+testMendelianCPTOnlyFather <- matrix(nrow=3, ncol= 3)
+testMendelianCPTOnlyFather[,1] <- gM_AA_unk
+testMendelianCPTOnlyFather[,2] <- gM_AB_unk
+testMendelianCPTOnlyFather[,3] <- gM_BB_unk
+
+testMendelianCPTOnlyMother <- testMendelianCPTOnlyFather
+
+# Set of phenotype values
+testPhenotypeState <- c("OK", "NOK")
+
+# Phenotype frequences in individual given the genotype of the individual - phenotype penetrance
+e <- 0.01
+testPhenoPenetranceCPT <- matrix(nrow=2, ncol=3)
+#                               OK   NOK Pheno
+testPhenoPenetranceCPT[,1] <- c(1-e, 0+e) # AA True geno
+testPhenoPenetranceCPT[,2] <- c(1-e, 0+e) # AB
+testPhenoPenetranceCPT[,3] <- c(0+e, 1-e) # BB   
+
+# Genotype frequences in individual given the genotype of the individual - genotype penetrance
+e <- 0.1
+testGenoPenetranceCPT <- matrix(nrow=3, ncol=3)
+#                             AA       AB     BB Observed Geno
+testGenoPenetranceCPT[,1] <-c(1-e-e^2, e,     e^2)     # AA True Geno
+testGenoPenetranceCPT[,2] <-c(e,       1-2*e, e)       # AB
+testGenoPenetranceCPT[,3] <-c(e^2,     e,     1-e-e^2) # BB
+```
+
+#Running through AlleleFetch without any masking - Genotype only
+```{r}
+out <- AlleleFetch(pedigreeData = PedScale,
+                   genotypeState = testGenotypeState,
+                   genotypeData = GenoScale,
+                   phenotypeState = testPhenotypeState,
+                   genoPT = testGenoPT,
+                   mendelianCPT = testMendelianCPT,
+                   mendelianCPTOnlyFather = testMendelianCPTOnlyFather,
+                   mendelianCPTOnlyMother = testMendelianCPTOnlyMother,
+                   genoPenetranceCPT = testGenoPenetranceCPT,
+                   phenoPenetranceCPT = testPhenoPenetranceCPT)
+#Save results into dataframe
+Result <- out$result
+#Save results
+write.csv(Result, "/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_Result_2009-2014.csv" )
+
+```
+
+#Running through AlleleFetch without any masking - Genotype and Phenotype
+```{r}
+out <- AlleleFetch(pedigreeData = PedScale,
+                   genotypeState = testGenotypeState,
+                   genotypeData = GenoScale,
+                   phenotypeState = testPhenotypeState,
+                   phenotypeData = PhenoScale,
+                   genoPT = testGenoPT,
+                   mendelianCPT = testMendelianCPT,
+                   mendelianCPTOnlyFather = testMendelianCPTOnlyFather,
+                   mendelianCPTOnlyMother = testMendelianCPTOnlyMother,
+                   genoPenetranceCPT = testGenoPenetranceCPT,
+                   phenoPenetranceCPT = testPhenoPenetranceCPT)
+#Save results into dataframe
+ResultPhen <- out$result
+#Save results
+write.csv(ResultPhen, "/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_ResultPheno_2009-2014.csv" )
+```
+
+#Running through for age adjusted penetrance
+```{r}
+
+#Additional phenotype function for age at eye test under 4.
+testPhenoPenetranceCPT_Before <- matrix(nrow=2, ncol=3)
+ #                           OK<4 NOK<4 Pheno
+ testPhenoPenetranceCPT_Before[,1] <- c(1-e, 0+e) # AA True geno
+ testPhenoPenetranceCPT_Before[,2] <- c(1-e, 0+e) # AB
+ testPhenoPenetranceCPT_Before[,3] <- c(1-e, 0+e) # BB
+ 
+ #Additional dataset for the age at eye testing
+PBGV_POAG_Sub <- read.csv("/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/PBGV_Sub_2009-2014.csv")
+
+AgePhenoScale <- PBGV_POAG_Sub %>%
+  select(IRN, DOB, EyeTest_Date)
+AgePhenoScale <- AgePhenoScale %>%
+  filter(!EyeTest_Date == "")
+AgePhenoScale$DOB <- as.Date(AgePhenoScale$DOB)
+AgePhenoScale$EyeTest_Date <- as.Date(AgePhenoScale$EyeTest_Date)
+
+AgePhenoScale$Age <- AgePhenoScale$EyeTest_Date - AgePhenoScale$DOB
+AgePhenoScale$Age <- as.numeric(AgePhenoScale$Age) %/% 365.25
+
+AgePhenoScale <- AgePhenoScale %>%
+  select(IRN, Age) %>%
+  rename(IID = "IRN")
+
+#Run AlleleFetch
+  out <- AlleleFetch(pedigreeData = PedScale,
+                   genotypeState = testGenotypeState,
+                   genotypeData = GenoScale,
+                   phenotypeState = testPhenotypeState,
+                   phenotypeData = PhenoScale,
+                   genoPT = testGenoPT,
+                   mendelianCPT = testMendelianCPT,
+                   mendelianCPTOnlyFather = testMendelianCPTOnlyFather,
+                   mendelianCPTOnlyMother = testMendelianCPTOnlyMother,
+                   genoPenetranceCPT = testGenoPenetranceCPT,
+                   phenoPenetranceCPT = testPhenoPenetranceCPT,
+                   phenoPenetranceCPT_Before = testPhenoPenetranceCPT_Before,
+                   agePhenotype = AgePhenoScale)
+  #Save results into dataframe
+  ResultPhenAge <- out$result
+  write.csv(ResultPhenAge, "/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_ResultPhenoAge_2009-2014.csv" )
+```
+
+#Plotting the Trends for AlphaPeel, and the three models in AlleleFetch
+(1)When ran through AlphaPeel
+```{r}
+AP_Sub_Data <- read.csv("/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/Alpha_Peel_2009-2014.csv")
+AP_Sub_Result <- read.csv("/Users/roscraddock/Documents/Agriculture Uni/Year 3/NERC Placement/AlphaPeel Practice/AlphaPeel-master/AlphaPeel/outputs/SingleLocus2009-2014.haps", header = FALSE, sep = " ", col.names = c("IID", "Genotype_Probabilities"))
+
+#Add the genotype states/values
+x <- c("AA", "BA", "AB", "BB")
+x <- data.frame(x)
+x <- x %>%
+  rename(Geno_State = "x")
+test <- x
+ID <- ((as.numeric(count(AP_Sub_Result)))/4)-1
+
+for(i in 1:ID) {
+test <- rbind(test, x)
+}
+
+AP_Sub_Result <- cbind(AP_Sub_Result, test)
+
+#Move to wide format
+AP_Sub_Result <- AP_Sub_Result %>%
+    pivot_wider(names_from = Geno_State,
+                values_from = Genotype_Probabilities)
+
+#Remove "mother of.." and "father of..."
+AP_Sub_Result$IID <- as.numeric(AP_Sub_Result$IID)
+AP_Sub_Result <- AP_Sub_Result %>%
+  filter(!is.na(IID))
+
+DOB <-AP_Sub_Data %>%
+  select(IID, DOB)
+
+AP_Sub_Result <- merge(AP_Sub_Result, DOB, by="IID")
+
+#Since the order of alleles is not relevant in this example, add columns Aa and aA together
+AP_Sub_Result$Het <- AP_Sub_Result$BA + AP_Sub_Result$AB
+AP_Sub_Result <- AP_Sub_Result %>%
+  select(IID, AA, Het, BB, DOB) %>%
+  rename(AB = "Het")
+
+#Remove individuals with no recorded date of birth
+AP_Sub_Result <- AP_Sub_Result %>% 
+  filter(!is.na(DOB))
+
+# Change DOB format to date
+AP_Sub_Result$DOB <- as.Date(AP_Sub_Result$DOB)
+
+# Add year and month columns
+AP_Sub_Result$year <- format(AP_Sub_Result$DOB, "%Y")
+AP_Sub_Result$month <- format(AP_Sub_Result$DOB, "%m")
+AP_Sub_Result$year_month <- format(AP_Sub_Result$DOB, "%Y-%m")
+str(AP_Sub_Result)
+
+#By year
+tmp <- AP_Sub_Result %>%
+  group_by(year) %>%
+  summarise(mean(AA))
+tmp2 <- AP_Sub_Result %>%
+  group_by(year) %>%
+  summarise(mean(AB))
+tmp3 <- AP_Sub_Result %>%
+  group_by(year) %>%
+  summarise(mean(BB))
+
+AP_Sub_Result_Plot <- cbind(tmp, tmp2, tmp3)
+
+#Reduce to only one column for year
+AP_Sub_Result_Plot <- AP_Sub_Result_Plot[,c(1,2,4,6),]
+
+#Move back into the tall format
+AP_Sub_Result_Plot <- melt(AP_Sub_Result_Plot, id.vars="year", variable.name = "State" )
+
+# Plotting the Mean frequency of states per year (1972 to January 2023)
+AP <- AP_Sub_Result_Plot %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Mean Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype", labels = c("AA", "AB", "BB"))+
+  geom_vline(xintercept = "1995", linetype = "dotted") +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+
+```
+
+(2) when ran through AlleleFetch with genotypes
+```{r}
+AF_Sub_Data <- read.csv("/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/PBGV_Sub_2009-2014.csv")
+AF_Sub_Result <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_Result_2009-2014.csv")
+AF_Sub_Result <- AF_Sub_Result %>%
+  select(!X)
+
+#Widen AF_Sub_Result
+AF_Sub_Result <- AF_Sub_Result %>%
+  pivot_wider(names_from = c(State, Var), 
+              values_from = Freq)
+#Merge together
+AF_Sub_Trend <- merge(AF_Sub_Result, AF_Sub_Data, by.x = "IID", by.y = "IRN")
+
+#Reduce to the IID, Genotypes, and DOB
+AF_Sub_Trend <- AF_Sub_Trend %>%
+  select(IID, AA_geno, AB_geno, BB_geno, OK_pheno, NOK_pheno, DOB)
+
+#Remove where DOB is NA - 800 removed?
+AF_Sub_Trend <- AF_Sub_Trend[!is.na(AF_Sub_Trend$DOB),]
+#Set DOB as date
+AF_Sub_Trend$DOB <- as.Date(AF_Sub_Trend$DOB)
+#Separate year into table
+AF_Sub_Trend$year <- format(AF_Sub_Trend$DOB, "%Y")
+
+#By year
+tmp <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(AA_geno))
+tmp2 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(AB_geno))
+tmp3 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(BB_geno))
+tmp4 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(OK_pheno))
+tmp5 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(NOK_pheno))
+
+AF_Sub_Trend_Plot <- cbind(tmp,tmp2,tmp3,tmp4,tmp5)
+AF_Sub_Trend_Plot <- AF_Sub_Trend_Plot[,c(1,2,4,6, 8, 10),]
+
+#Move back into the tall format
+AF_Sub_Trend_Plot <- melt(AF_Sub_Trend_Plot, id.vars="year", variable.name = "State" )
+
+# Plotting the Mean frequency of states per year (2009 to January 2014)
+AFGeno <- AF_Sub_Trend_Plot %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Mean Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#D55E00", "#E69F00", "#7C788A"), name = "Genotype", labels = c("AA", "AB", "BB", "Unaffected", "Affected"))+
+  geom_vline(xintercept = "1995", linetype = "dotted") +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+
+```
+
+(3) when ran through AlleleFetch with genotypes and phenotypes
+```{r}
+AF_Sub_Data <- read.csv("/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/PBGV_Sub_2009-2014.csv")
+AF_Sub_Result <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_ResultPheno_2009-2014.csv")
+AF_Sub_Result <- AF_Sub_Result %>%
+  select(!X)
+
+#Widen AF_Sub_Result
+AF_Sub_Result <- AF_Sub_Result %>%
+  pivot_wider(names_from = c(State, Var), 
+              values_from = Freq)
+#Merge together
+AF_Sub_Trend <- merge(AF_Sub_Result, AF_Sub_Data, by.x = "IID", by.y = "IRN")
+
+#Reduce to the IID, Genotypes, and DOB
+AF_Sub_Trend <- AF_Sub_Trend %>%
+  select(IID, AA_geno, AB_geno, BB_geno, OK_pheno, NOK_pheno, DOB)
+
+#Remove where DOB is NA - 800 removed?
+AF_Sub_Trend <- AF_Sub_Trend[!is.na(AF_Sub_Trend$DOB),]
+#Set DOB as date
+AF_Sub_Trend$DOB <- as.Date(AF_Sub_Trend$DOB)
+#Separate year into table
+AF_Sub_Trend$year <- format(AF_Sub_Trend$DOB, "%Y")
+
+#By year
+tmp <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(AA_geno))
+tmp2 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(AB_geno))
+tmp3 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(BB_geno))
+tmp4 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(OK_pheno))
+tmp5 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(NOK_pheno))
+
+AF_Sub_Trend_Plot <- cbind(tmp,tmp2,tmp3,tmp4,tmp5)
+AF_Sub_Trend_Plot <- AF_Sub_Trend_Plot[,c(1,2,4,6, 8, 10),]
+
+#Move back into the tall format
+AF_Sub_Trend_Plot <- melt(AF_Sub_Trend_Plot, id.vars="year", variable.name = "State" )
+
+# Plotting the Mean frequency of states per year (2009 to January 2014)
+AFPheno <- AF_Sub_Trend_Plot %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Mean Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#D55E00", "#E69F00", "#7C788A"), name = "Genotype", labels = c("AA", "AB", "BB", "Unaffected", "Affected"))+
+  geom_vline(xintercept = "1995", linetype = "dotted") +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+
+```
+
+(4) When run through AlleleFetch with DNA tests, eye tests, and age-adjusted penetrance.
+```{r}
+AF_Sub_Data <- read.csv("/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/PBGV_Sub_2009-2014.csv")
+AF_Sub_ResultAge <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_ResultPhenoAge_2009-2014.csv")
+AF_Sub_ResultAge <- AF_Sub_ResultAge %>%
+  select(!X)
+
+#Widen AF_Sub_Result
+AF_Sub_ResultAge <- AF_Sub_ResultAge %>%
+  pivot_wider(names_from = c(State, Var), 
+              values_from = Freq)
+#Merge together
+AF_Sub_Trend <- merge(AF_Sub_ResultAge, AF_Sub_Data, by.x = "IID", by.y = "IRN")
+
+#Reduce to the IID, Genotypes, and DOB
+AF_Sub_Trend <- AF_Sub_Trend %>%
+  select(IID, AA_geno, AB_geno, BB_geno, OK_pheno, NOK_pheno, DOB)
+
+#Remove where DOB is NA - 800 removed?
+AF_Sub_Trend <- AF_Sub_Trend[!is.na(AF_Sub_Trend$DOB),]
+#Set DOB as date
+AF_Sub_Trend$DOB <- as.Date(AF_Sub_Trend$DOB)
+#Separate year into table
+AF_Sub_Trend$year <- format(AF_Sub_Trend$DOB, "%Y")
+
+#By year
+tmp <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(AA_geno))
+tmp2 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(AB_geno))
+tmp3 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(BB_geno))
+tmp4 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(OK_pheno))
+tmp5 <- AF_Sub_Trend %>%
+  group_by(year) %>%
+  summarise(mean(NOK_pheno))
+
+AF_Sub_Trend_Plot <- cbind(tmp,tmp2,tmp3,tmp4,tmp5)
+AF_Sub_Trend_Plot <- AF_Sub_Trend_Plot[,c(1,2,4,6, 8, 10),]
+
+#Move back into the tall format
+AF_Sub_Trend_Plot <- melt(AF_Sub_Trend_Plot, id.vars="year", variable.name = "State" )
+
+# Plotting the Mean frequency of states per year (2009 to January 2014)
+AFPhenoAge <- AF_Sub_Trend_Plot %>% ggplot(aes(year, value, group=State, col=State))+
+  geom_line(size=1) +
+  xlab("Year of Birth") +
+  ylab("Mean Frequency") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 0.5)) +
+  scale_colour_manual(values = c("#009E73", "#0072B2", "#D55E00", "#E69F00", "#7C788A"), name = "Genotype", labels = c("AA", "AB", "BB", "Unaffected", "Affected"))+
+  geom_vline(xintercept = "1995", linetype = "dotted") +
+  geom_vline(xintercept = "2015", linetype = "dashed", colour = "#D35FB7")
+
+```
+
+Plotting all four plots together
+```{r}
+ggarrange(AP, AFGeno, AFPheno, AFPhenoAge, labels = c("a", "b", "c", "d"), ncol= 2, nrow = 2, common.legend = TRUE, legend = "right")
+
+#Plotting with the section taken from the full pedigree
+
+```
+
+
+#Plotting the change in the genotype probabilities for the 11 dogs eye tested only.
+```{r}
+test <- PBGV_POAG_Sub %>%
+  filter(!EyeTest_Result == "") %>%
+  filter(DNA_result == "" | is.na(DNA_result))
+
+tmp <- Result %>%
+  filter(IID == 8685312) %>%
+  filter(!Var == "pheno") %>%
+  group_by(IID)
+
+tmp <- Result$IID %in% test$IRN
+OPGResults <- Result[tmp,]
+OPGResults <- OPGResults %>%
+  filter(!Var == "pheno")
+
+tmp <- ResultPhen$IID %in% test$IRN
+OPGPResults <- ResultPhen[tmp,]
+OPGPResults <- OPGPResults %>%
+  filter(!Var == "pheno")
+
+tmp <- ResultPhenAge$IID %in% test$IRN
+OPAGP <- ResultPhenAge[tmp,]
+OPAGP <- OPGPResults %>%
+  filter(!Var == "pheno")
+
+OPGResults$IID <- as.character(OPGResults$IID)
+
+OPGPlot <- ggplot(OPGResults, aes(IID, Freq, fill = State)) + geom_col(colour = "black", position = "fill") +
+  scale_fill_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype") + ylab("Frequency") + xlab("Dog") + scale_x_discrete(labels = c(1,2,3,4,5,6,7,8,9,10,11))
+
+OPGPResults$IID <- as.character(OPGPResults$IID)
+OPGPPlot <- ggplot(OPGPResults, aes(IID, Freq, fill = State)) + geom_col(colour = "black", position = "fill") +
+  scale_fill_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype") + ylab("Frequency") + xlab("Dog") + scale_x_discrete(labels = c(1,2,3,4,5,6,7,8,9,10,11))
+
+ggarrange(OPGPlot, OPGPPlot, labels = c("a", "b"), ncol= 1, nrow = 2, common.legend = TRUE, legend = "right")
+
+OPAGP$IID <- as.character(OPAGP$IID)
+
+#Checking age-adjusted model is the same.
+OPAGPPlot <- ggplot(OPAGP, aes(IID, Freq, fill = State)) + geom_col(colour = "black", position = "fill") +
+  scale_fill_manual(values = c("#009E73", "#0072B2", "#D55E00"), name = "Genotype") + ylab("Frequency") + xlab("Dog") + scale_x_discrete(labels = c(1,2,3,4,5,6,7,8,9,10,11))
+
+ggarrange(OPGPlot, OPGPPlot, OPAGPPlot, labels = c("a", "b", "c"), ncol= 1, nrow = 3, common.legend = TRUE, legend = "right")
+```
+
+

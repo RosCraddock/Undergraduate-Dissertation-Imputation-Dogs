@@ -1,0 +1,570 @@
+---
+title: "PBGV Pedigree Cleaning"
+output: html_document
+date: '2023-04-12'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Clean session
+rm(list = ls())
+
+# Install packages
+library(tidyverse)
+library(skimr)
+library(optiSel)
+
+# Install AlleleFetch - for function SortPedigree()
+if (FALSE) {
+  setRepositories() # choose CRAN and BioC
+  install.packages(pkg = c("gRain", "devtools"), dep = TRUE)
+  # PR that fixed the repeatPattern() data issue
+  # https://github.com/hojsgaard/gRain/pull/9
+  devtools::install_github(repo = "https://github.com/gregorgorjanc/gRain")
+}
+# Load package
+library(package = "gRain")
+
+# User defined functions
+
+source(file = "AlleleFetch.R")
+
+```
+
+## Import the raw dataset
+```{r}
+setwd(dir="/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data")
+
+PBGV_POAG <- read.csv(file = "PBGV_POAG_data.csv")
+```
+
+## Correcting the Data Formats
+Check the formatting of the data
+```{r}
+str(PBGV_POAG)
+```
+
+Correct the formatting
+```{r}
+PBGV_POAG$IRN <- as.character(PBGV_POAG$IRN)
+PBGV_POAG$IRN_sire <- as.character(PBGV_POAG$IRN_sire)
+PBGV_POAG$IRN_dam <- as.character(PBGV_POAG$IRN_dam)
+PBGV_POAG$Sex <- as.factor(PBGV_POAG$Sex)
+PBGV_POAG$DOB <- as.Date(PBGV_POAG$DOB, "%Y-%m-%d")
+
+```
+
+## Pedigree Cleaning
+
+Check the levels of sex - either dog or bitch
+```{r}
+unique(PBGV_POAG$Sex)
+```
+-> Two levels as expected, no correction needed.
+
+
+Check if all recorded sires and dams have their own records in the pedigree
+```{r}
+test <- PBGV_POAG %>%
+  filter(!is.na(IRN_sire) & !IRN_sire %in% IRN)
+count(test)
+
+test <- PBGV_POAG %>%
+  filter(!is.na(IRN_dam) & !IRN_dam %in% IRN)
+count(test)
+```
+-> All recorded sires and dams have their own records, no correction needed.
+
+
+Check if all sires are dogs, and all dams are bitches.
+```{r}
+test <- PBGV_POAG %>%
+  filter(!is.na(IRN) & IRN %in% IRN_sire)
+
+#Identify any bitches
+print(test[test$Sex=="Bitch",])
+#2 sires recorded are said to be female.
+
+test <- PBGV_POAG %>%
+  filter(!is.na(IRN) & IRN %in% IRN_dam)
+
+#Identify any dog
+print(test[test$Sex=="Dog",])
+#2 dams recorded are said to be male.
+```
+
+To correct, the recorded sire or dam are removed where the sex does not match
+```{r}
+#6790410 - recorded as female, but said to be sire for two dogs. Removed from parents
+PBGV_POAG <- PBGV_POAG %>%
+  transform(IRN_sire=ifelse(IRN_sire=="6790410", NA, IRN_sire))
+
+#453000
+PBGV_POAG <- PBGV_POAG %>%
+  transform(IRN_sire=ifelse(IRN_sire=="453000", NA, IRN_sire))
+
+#453183
+PBGV_POAG <- PBGV_POAG %>%
+  transform(IRN_dam=ifelse(IRN_dam=="453183", NA, IRN_dam))
+
+#453207
+PBGV_POAG <- PBGV_POAG %>%
+  transform(IRN_dam=ifelse(IRN_dam=="453207", NA, IRN_dam))
+
+```
+
+Check all has worked as expected
+```{r}
+test<- PBGV_POAG %>%
+  filter(!is.na(IRN) & IRN %in% IRN_sire)
+
+#Identify any bitches
+print(test[test$Sex=="Bitch",])
+
+
+test <- PBGV_POAG %>%
+  filter(!is.na(IRN) & IRN %in% IRN_dam)
+
+#Identify any dog
+print(test[test$Sex=="Dog",])
+
+```
+
+
+Test for any duplicates - all due to multiple eye tests
+```{r}
+
+sum(duplicated(PBGV_POAG$IRN))
+#63 duplicates found
+
+test <- PBGV_POAG[duplicated(PBGV_POAG$IRN),]
+
+#6841428 - remove duplicate to display most recent eye test
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "6841428" & PBGV_POAG$EyeTest_Result== "Unaffected"),]
+
+#6841595
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "6841595" & PBGV_POAG$EyeTest_Date== "2016-06-25"),]
+
+#6862679 - previously diagnosed as affected, but later unaffected. Assumed due to successful treatment so selected affected to remove treatment. 
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "6862679" & !PBGV_POAG$EyeTest_Date== "2017-03-02"),]
+
+#7233110
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "7233110" & PBGV_POAG$EyeTest_Date== "2016-04-07"),]
+
+#7609612
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "7609612" & !PBGV_POAG$EyeTest_Date== "2018-02-22"),]
+
+#7733685
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "7733685" & PBGV_POAG$EyeTest_Date== "2019-04-20"),]
+
+#7733686 
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "7733686" & !PBGV_POAG$EyeTest_Date== "2021-02-23"),]
+
+#7785875
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "7785875" & PBGV_POAG$EyeTest_Date== "2014-03-15"),]
+
+#7852467
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "7852467" & PBGV_POAG$EyeTest_Date== "2014-03-15"),]
+
+#8044309
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "8044309" & PBGV_POAG$EyeTest_Result== "Test results with owner"),]
+
+#8593652
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "8593652" & !PBGV_POAG$EyeTest_Date== "2019-10-24"),]
+
+#8616739
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "8616739" & !PBGV_POAG$EyeTest_Date== "2020-02-06"),]
+
+#8616742
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "8616742" & PBGV_POAG$EyeTest_Date== "2014-11-28"),]
+
+#8685310
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "8685310" & !PBGV_POAG$EyeTest_Date== "2022-10-25"),]
+
+#8822546
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "8822546" & !PBGV_POAG$EyeTest_Date== "2019-04-20"),]
+
+#8827943
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "827943" & PBGV_POAG$EyeTest_Date== "2014-08-21"),]
+
+#8888576 - latest says unaffected, again assumed from successful treatment as previously identified affected. 
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "888576" & PBGV_POAG$EyeTest_Date== "2020-12-01"),]
+
+#8980798
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "8980798" & PBGV_POAG$EyeTest_Date== "2016-08-03"),]
+
+#8980799
+PBGV_POAG <-PBGV_POAG[!(PBGV_POAG$IRN == "8980799" & !PBGV_POAG$EyeTest_Date== "2019-11-15"),]
+
+#8951848
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "8951848" & PBGV_POAG$EyeTest_Date== "2014-11-27"),]
+
+#9144292
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "9144292" & PBGV_POAG$EyeTest_Date== "2020-09-08"),]
+
+#9575670 - most recent eye test no result recorded, so using the second most recent.
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "9575670" & PBGV_POAG$EyeTest_Date== "2022-11-11"),]
+
+#9668778
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "668778" & PBGV_POAG$EyeTest_Date== "2020-03-06"),]
+
+#9878058
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "9878058" & !PBGV_POAG$EyeTest_Date== "2022-11-11"),]
+
+#9878920
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "9878920" & PBGV_POAG$EyeTest_Date== "2018-10-20"),]
+
+#9943273
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "9943273" & PBGV_POAG$EyeTest_Date== "2020-09-08"),]
+
+#10123773
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "10123773" & PBGV_POAG$EyeTest_Date== "2019-04-20"),]
+
+#8202645
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "8202645" & !PBGV_POAG$EyeTest_Date== "2020-02-06"),]
+
+#8827943
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "8827943" & PBGV_POAG$EyeTest_Date== "2014-08-21"),]
+
+#8888576 - latest says unaffected, again assumed from successful treatment as previously identified affected.
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "8888576" & PBGV_POAG$EyeTest_Date== "2020-12-01"),]
+
+#9668778
+PBGV_POAG <- PBGV_POAG[!(PBGV_POAG$IRN == "9668778" & PBGV_POAG$EyeTest_Date== "2020-03-06"),]
+
+
+```
+
+Check that all duplicates have been corrected
+```{r}
+sum(duplicated(PBGV_POAG$IRN))
+```
+
+
+Remove individuals with no sire, dam, or offspring recorded - they introduce error, and have no genotype or phenotype recorded.
+```{r}
+For_Cleaning <- PBGV_POAG %>%
+  select(IRN, IRN_sire, IRN_dam)
+
+head(For_Cleaning)
+Pedig <- prePed(For_Cleaning)
+
+#Identified the 42 observations that have no sire, dam, and no offspring
+tmp <- Pedig %>%
+  filter(is.na(Sire)) %>%
+  filter (is.na(Dam)) %>%
+  filter(Offspring== "FALSE")
+
+
+#Remove from PBGV_POAG for analysis
+tmp2 <- PBGV_POAG$IRN %in% tmp$Indiv
+PBGV_POAG <- PBGV_POAG[!tmp2,]
+
+```
+
+Save the cleaned pedigree and dataset
+```{r}
+write.csv(PBGV_POAG, "/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/FullCleanedData.csv")
+```
+
+
+Create separate dataset that does not have hereditary status
+```{r}
+PBGV_POAG_DNA <- PBGV_POAG %>%
+  transform(DNA_result=ifelse(DNA_result=="Hereditary Clear", NA, DNA_result))
+
+PBGV_POAG_DNA <- PBGV_POAG_DNA %>%
+  transform(DNA_result=ifelse(DNA_result=="Hereditary Carrier", NA, DNA_result))
+
+PBGV_POAG_DNA <- PBGV_POAG_DNA %>%
+  transform(DNA_result=ifelse(DNA_result=="Hereditary Affected", NA, DNA_result))
+```
+
+
+## Prepare files for full pedigree imputation in AlphaPeel
+
+Need two files: 
+     Genotype file (list of ID with genotypes either 0, 1, 2, 9 (for unknown)) and 
+     Pedigree file, 0 where individual is unknown.
+```{r}
+#Separate ID, FID, MID, Genotype
+Alpha_Peel <- PBGV_POAG_DNA %>%
+  select(IRN, IRN_sire, IRN_dam, DNA_result, DOB, DNA_TestDate)
+
+Alpha_Peel <- Alpha_Peel %>%
+  rename(IID = "IRN", FID = "IRN_sire", MID="IRN_dam", Genotype = "DNA_result")
+
+#Reorder pedigree so founders, then offspring
+Alpha_Peel <- SortPedigree (Alpha_Peel)
+
+#Recode pedigree
+Alpha_Peel_Recode <- data.frame(IID = 1:nrow(Alpha_Peel),
+             FID = match(x = Alpha_Peel[[2]], table = Alpha_Peel[[1]], nomatch = NA),
+             MID = match(x = Alpha_Peel[[3]], table = Alpha_Peel[[1]], nomatch = NA))
+
+#Combine the genotype, DOB, and DNA_TestDate with the recoded pedigree
+tmp <- Alpha_Peel %>%
+  select(DOB, Genotype, DNA_TestDate)
+Alpha_Peel_Recode <- cbind(Alpha_Peel_Recode, tmp)
+
+#Save for later plots and analysis
+write.csv(Alpha_Peel_Recode, "/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/fullPBGV_Alpha_Peel_Recode.csv")
+
+#Separate Pedigree
+Alpha_Peel_Ped <- Alpha_Peel_Recode %>%
+  select(IID, FID, MID)
+#Change any NA to 0 (in FID and MID)
+Alpha_Peel_Ped <- Alpha_Peel_Ped %>%
+  transform(FID=ifelse(is.na(FID), 0, FID))
+Alpha_Peel_Ped <- Alpha_Peel_Ped %>%
+  transform(MID=ifelse(is.na(MID), 0, MID))
+
+#Separate into Genotype
+Alpha_Peel_Geno <- Alpha_Peel_Recode %>%
+  select(IID, Genotype)
+#Change any NA to 9 
+Alpha_Peel_Geno <- Alpha_Peel_Geno %>%
+  transform(Genotype=ifelse(Genotype=="", 9, Genotype))
+Alpha_Peel_Geno <- Alpha_Peel_Geno %>%
+  transform(Genotype=ifelse(is.na(Genotype), 9, Genotype))
+#Change Clear to 0, Carrier to 1, Affected to 2
+Alpha_Peel_Geno <- Alpha_Peel_Geno %>%
+  transform(Genotype=ifelse(Genotype=="Clear", 0, Genotype))
+Alpha_Peel_Geno <- Alpha_Peel_Geno %>%
+  transform(Genotype=ifelse(Genotype=="Carrier", 1, Genotype))
+Alpha_Peel_Geno <- Alpha_Peel_Geno %>%
+  transform(Genotype=ifelse(Genotype=="Affected", 2, Genotype))
+Alpha_Peel_Geno$Genotype <- as.numeric(Alpha_Peel_Geno$Genotype)
+
+```
+
+
+Save into text formats
+```{r}
+write.table(Alpha_Peel_Ped, "/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlphaPeel Inputs/PBVG_Ped.txt", row.names = FALSE, col.names = FALSE)
+
+write.table(Alpha_Peel_Geno, "/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlphaPeel Inputs/PBVG_Geno.txt", row.names = FALSE, col.names = FALSE)
+```
+
+Separating the hereditary status for validation of AlphaPeel
+```{r}
+#Separate ID, FID, MID, Genotype
+Alpha_Peel <- PBGV_POAG %>%
+  select(IRN, IRN_sire, IRN_dam, DNA_result, DOB)
+
+Alpha_Peel <- Alpha_Peel %>%
+  rename(IID = "IRN", FID = "IRN_sire", MID="IRN_dam", Genotype = "DNA_result")
+
+#Reorder pedigree so founders, then offspring
+Alpha_Peel <- SortPedigree (Alpha_Peel)
+
+#Recode pedigree
+Alpha_Peel_Recode <- data.frame(IID = 1:nrow(Alpha_Peel),
+             FID = match(x = Alpha_Peel[[2]], table = Alpha_Peel[[1]], nomatch = NA),
+             MID = match(x = Alpha_Peel[[3]], table = Alpha_Peel[[1]], nomatch = NA))
+
+#Insert the DNA results back in
+Alpha_Peel <- Alpha_Peel %>%
+  select(Genotype, DOB)
+Val_Alpha <- cbind(Alpha_Peel_Recode, Alpha_Peel)
+
+write.csv(Val_Alpha, "/Users/roscraddock/Documents/PBGV_Full_Val_Alpha.csv")
+```
+
+## Subsetting the pedigree
+Scale testing was completed, separating the pedigree by dates of birth.
+The optimum to test the hypothesis was found between January 2009 and June 2014.
+```{r}
+# Separating from 2009 to June 2014 by date of birth
+PBGV_POAG_DNA$DOB <- as.Date(PBGV_POAG_DNA$DOB)
+PBGV_POAG_Sub <- PBGV_POAG_DNA[!PBGV_POAG_DNA$DOB < "2008-12-31",]
+PBGV_POAG_Sub <- PBGV_POAG_Sub[!PBGV_POAG_Sub$DOB > "2014-06-30",]
+# Adding individuals with no date of birth
+tmp <- PBGV_POAG_DNA[is.na(PBGV_POAG_DNA$DOB),]
+PBGV_POAG_Sub <- rbind(PBGV_POAG_Sub, tmp)
+#Removing any observations with an IRN of NA
+PBGV_POAG_Sub <- PBGV_POAG_Sub[!is.na(PBGV_POAG_Sub$IRN),]
+
+#If any sire without own record in pedigree, set to NA
+test <- PBGV_POAG_Sub %>%
+  filter(!is.na(IRN_sire) & !IRN_sire %in% IRN)
+test$IRN_sire <- NA
+
+tmp <- PBGV_POAG_Sub %>%
+  filter(!is.na(IRN_sire) & IRN_sire %in% IRN)
+tmp2 <- PBGV_POAG_Sub %>%
+  filter(is.na(IRN_sire))
+PBGV_POAG_Sub <- rbind(tmp, tmp2, test)
+
+#If any dam without own record in pedigree, set to NA
+test <- PBGV_POAG_Sub %>%
+  filter(!is.na(IRN_dam) & !IRN_dam %in% IRN)
+test$IRN_dam <- NA
+
+tmp <- PBGV_POAG_Sub %>%
+  filter(!is.na(IRN_dam) & IRN_dam %in% IRN)
+tmp2 <- PBGV_POAG_Sub %>%
+  filter(is.na(IRN_dam))
+PBGV_POAG_Sub <- rbind(tmp, tmp2, test)
+
+#Remove any observations with IRN of NA
+PBGV_POAG_Sub <- PBGV_POAG_Sub[!is.na(PBGV_POAG_Sub$IRN),]
+
+#Check the pedigree with OptiSel
+For_Cleaning <-PBGV_POAG_Sub %>%
+  select(IRN, IRN_sire, IRN_dam)
+
+head(For_Cleaning)
+Pedig <- prePed(For_Cleaning)
+
+#Select individuals with no recorded dam, sire, or offspring
+tmp <- Pedig %>%
+  filter(is.na(Sire)) %>%
+  filter (is.na(Dam)) %>%
+  filter(Offspring== "FALSE")
+
+#Remove from PBGV_POAG_Sub as introduces error
+tmp2 <- PBGV_POAG_Sub$IRN %in% tmp$Indiv
+PBGV_POAG_Sub <- PBGV_POAG_Sub[!tmp2,]
+```
+
+Save to files
+```{r}
+write.csv(PBGV_POAG_Sub, "/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/PBGV_Sub_2009-2014.csv")
+```
+
+## Preparing the files for AlphaPeel
+Separate into AlphaPeel Format
+```{r}
+# Separate ID, FID, MID, Genotype
+Alpha_Peel <- PBGV_POAG_Sub %>%
+  select(IRN, IRN_sire, IRN_dam, DNA_result, DOB, DNA_TestDate)
+
+Alpha_Peel <- Alpha_Peel %>%
+  rename(IID = "IRN", FID = "IRN_sire", MID="IRN_dam", Genotype = "DNA_result")
+
+# Reorder pedigree so founders, then offspring
+Alpha_Peel <- SortPedigree (Alpha_Peel)
+
+# Recode pedigree
+Alpha_Peel_Recode <- data.frame(IID = 1:nrow(Alpha_Peel),
+             FID = match(x = Alpha_Peel[[2]], table = Alpha_Peel[[1]], nomatch = NA),
+             MID = match(x = Alpha_Peel[[3]], table = Alpha_Peel[[1]], nomatch = NA))
+
+# Re-combine the recoded pedigree with the genotype
+tmp <- Alpha_Peel %>%
+  select(DOB, Genotype, DNA_TestDate)
+Alpha_Peel_Recode <- cbind(Alpha_Peel_Recode, tmp)
+
+# Separate Pedigree
+Alpha_Peel_Ped <- Alpha_Peel_Recode %>%
+  select(IID, FID, MID)
+#Change any NA to 0 (in FID and MID)
+Alpha_Peel_Ped <- Alpha_Peel_Ped %>%
+  transform(FID=ifelse(is.na(FID), 0, FID))
+Alpha_Peel_Ped <- Alpha_Peel_Ped %>%
+  transform(MID=ifelse(is.na(MID), 0, MID))
+
+#Separate into Genotype
+Alpha_Peel_Geno <- Alpha_Peel_Recode %>%
+  select(IID, Genotype)
+#Change any NA to 9 
+Alpha_Peel_Geno <- Alpha_Peel_Geno %>%
+  transform(Genotype=ifelse(Genotype=="", 9, Genotype))
+Alpha_Peel_Geno <- Alpha_Peel_Geno %>%
+  transform(Genotype=ifelse(is.na(Genotype), 9, Genotype))
+#Change Clear to 0, Carrier to 1, Affected to 2
+Alpha_Peel_Geno <- Alpha_Peel_Geno %>%
+  transform(Genotype=ifelse(Genotype=="Clear", 0, Genotype))
+Alpha_Peel_Geno <- Alpha_Peel_Geno %>%
+  transform(Genotype=ifelse(Genotype=="Carrier", 1, Genotype))
+Alpha_Peel_Geno <- Alpha_Peel_Geno %>%
+  transform(Genotype=ifelse(Genotype=="Affected", 2, Genotype))
+Alpha_Peel_Geno$Genotype <- as.numeric(Alpha_Peel_Geno$Genotype)
+```
+
+Save in text formats.
+```{r}
+#Save into text formats
+write.table(Alpha_Peel_Ped, "/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlphaPeel Inputs/PBVG_Ped_2009-2014.txt", row.names = FALSE, col.names = FALSE)
+
+write.table(Alpha_Peel_Geno, "/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlphaPeel Inputs/PBVG_Geno_2009-2014.txt", row.names = FALSE, col.names = FALSE)
+
+#Save the recoded AlphaPeel Subset into an csv
+write.csv(Alpha_Peel_Recode, "/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/Alpha_Peel_2009-2014.csv")
+```
+
+
+Prepare AlphaPeel Genotype files for LOOCV
+```{r}
+i <- 1
+nid <- as.numeric(count(Alpha_Peel_Geno))
+for (i in i:nid){
+  tmp <- Alpha_Peel_Geno
+  x <- Alpha_Peel_Geno[Alpha_Peel_Geno$IID == i,]
+  test <- !x$Genotype == 9
+  if (any(test)){
+    tmp$Genotype[i] <- 9
+    Filename <- paste("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlphaPeel Inputs/", i, "PBVG_Geno_2009-2014.txt", sep="")
+    write.table(tmp, file = Filename, row.names = FALSE, col.names = FALSE)
+  }
+}
+```
+
+
+## Preparing the files for AlleleFetch
+```{r}
+PedScale <- PBGV_POAG_Sub %>%
+  select(IRN, IRN_sire, IRN_dam) %>%
+  rename(IID="IRN", FID="IRN_sire", MID="IRN_dam")
+
+GenoScale <- PBGV_POAG_Sub %>%
+  select(IRN, DNA_result) %>%
+  rename(IID="IRN", Genotype="DNA_result")
+
+# Select only the individuals with genotypes
+tmp <- GenoScale %>%
+  filter(Genotype == "Clear")
+tmp2 <-GenoScale %>%
+  filter(Genotype == "Carrier")
+tmp3 <-GenoScale %>%
+  filter(Genotype == "Affected")
+
+GenoScale <- rbind(tmp, tmp2, tmp3)
+
+#Change the genotypes to "AA", "AB", "BB" notation
+GenoScale <- GenoScale %>%
+  transform(Genotype=ifelse(Genotype=="Clear", "AA", Genotype))
+GenoScale <- GenoScale %>%
+  transform(Genotype=ifelse(Genotype=="Carrier", "AB", Genotype))
+GenoScale<- GenoScale %>%
+  transform(Genotype=ifelse(Genotype=="Affected", "BB", Genotype))
+
+# Check all the genotyped individuals are in the pedigree
+test <-  !GenoScale$IID %in% PedScale$IID
+
+#Select phenotypes to add to analysis.
+PhenoScale <- PBGV_POAG_Sub %>%
+  select(IRN, EyeTest_Result) %>%
+  rename(IID="IRN", Phenotype="EyeTest_Result")
+
+#Select only the individuals with phenotypes
+tmp <- PhenoScale %>%
+  filter(Phenotype== "Affected")
+tmp2 <- PhenoScale %>%
+  filter (Phenotype == "Unaffected")
+
+PhenoScale <- rbind(tmp,tmp2)
+
+#Change categories to "OK" and "NOK" from "Unaffected" and "Affected"
+PhenoScale <-  PhenoScale %>%
+  transform(Phenotype=ifelse(Phenotype=="Unaffected", "OK", "NOK"))
+```
+
+Save these into three separate files
+```{r}
+write.csv(GenoScale, "/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_Geno_2009-2014.csv")
+write.csv(PhenoScale, "/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_Pheno_2009-2014.csv")
+write.csv(PedScale, "/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_Ped_2009-2014.csv")
+```
