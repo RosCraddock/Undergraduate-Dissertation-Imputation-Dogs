@@ -1,0 +1,213 @@
+---
+title: "Testing Age Adjusted Penetrance"
+output: html_document
+date: '2023-05-01'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+# Install
+# Clean session
+rm(list = ls())
+if (FALSE) {
+  setRepositories() # choose CRAN and BioC
+  install.packages(pkg = c("gRain", "devtools"), dep = TRUE)
+  # PR that fixed the repeatPattern() data issue
+  # https://github.com/hojsgaard/gRain/pull/9
+  devtools::install_github(repo = "https://github.com/gregorgorjanc/gRain")
+}
+# Load package
+library(package = "gRain")
+
+# User defined functions
+
+source(file = "AlleleFetch.R")
+```
+
+
+Define the Inputs for AlleleFetch
+```{r}
+testgenotypeState <- c("AA", "AB", "BB")
+testphenotypeState <- c("Unaffected", "Affected")
+
+# Prior allele frequency in (founder) population
+PrA <- 2/3
+PrB <- 1 - PrA
+
+# Prior genotype frequencies in (founder) population
+# According to Hardy Weinberg's Law
+testgenoPT <- c(PrA*PrA, 2*PrA*PrB, PrB*PrB)
+
+# Genotype frequencies in individual given the genotype of parents according to Mendel's law
+# and accounting for mutation (via e)
+e <- 0.0001
+gM_AA_AA <- c(1-2*e+e^2, 2*e-2*e^2, e^2)
+gM_AA_AB <- c(1/2-1/2*e, 1/2, 1/2*e)
+gM_AA_BB <- c(e-e^2, 1-2*e+2*e^2, e-e^2)
+gM_AB_AA <- c(1/2-1/2*e, 1/2, 1/2*e)
+gM_AB_AB <- c(1/4, 1/2, 1/4)
+gM_AB_BB <- c(1/2*e, 1/2, 1/2-1/2*e)
+gM_BB_AA <- c(e-e^2, 1-2*e+2*e^2, e-e^2)
+gM_BB_AB <- c(1/2*e, 1/2, 1/2-1/2*e)
+gM_BB_BB <- c(e^2, 2*e-2*e^2, 1-2*e+e^2)
+
+testmendelianCPT <- matrix(nrow=3, ncol=9)
+testmendelianCPT[, 1] <- gM_AA_AA
+testmendelianCPT[, 2] <- gM_AA_AB
+testmendelianCPT[, 3] <- gM_AA_BB
+testmendelianCPT[, 4] <- gM_AB_AA
+testmendelianCPT[, 5] <- gM_AB_AB
+testmendelianCPT[, 6] <- gM_AB_BB
+testmendelianCPT[, 7] <- gM_BB_AA
+testmendelianCPT[, 8] <- gM_BB_AB
+testmendelianCPT[, 9] <- gM_BB_BB
+
+# Genotype frequencies in individual given the genotype of one parent (Mendel's law with mutation)
+# and base population (Hardy-Weinberg's law)
+gM_AA_unk <- c(PrA-PrA*e, PrB-PrB*e+PrA*e, PrB*e)
+gM_AB_unk <- c(1/2*PrA, 1/2*(PrA+PrB), 1/2*PrB)
+gM_BB_unk <- c(PrA*e, PrA-PrA*e+PrB*e, PrB-PrB*e)
+
+testmendelianCPTOnlyFather <- matrix(nrow=3, ncol= 3)
+testmendelianCPTOnlyFather[,1] <- gM_AA_unk
+testmendelianCPTOnlyFather[,2] <- gM_AB_unk
+testmendelianCPTOnlyFather[,3] <- gM_BB_unk
+
+testmendelianCPTOnlyMother <- mendelianCPTOnlyFather
+
+# Phenotype frequences in individual given the genotype of the individual - phenotype penetrance
+e <- 0.01
+
+# Phenotype frequences in individual given the genotype of the individual - penetrance
+
+ testphenoPenetranceCPT_Before <- matrix(nrow=2, ncol=3)
+ #                           OK<4 NOK<4 Pheno
+ testphenoPenetranceCPT_Before[,1] <- c(1-e, 0+e) # AA True geno
+ testphenoPenetranceCPT_Before[,2] <- c(1-e, 0+e) # AB
+ testphenoPenetranceCPT_Before[,3] <- c(1-e, 0+e) # BB
+
+testphenoPenetranceCPT <- matrix(nrow=2, ncol=3)
+#                           OK>4 NOK>4 Pheno
+testphenoPenetranceCPT[,1] <- c(1-e, 0+e) # AA True geno
+testphenoPenetranceCPT[,2] <- c(1-e, 0+e) # AB
+testphenoPenetranceCPT[,3] <- c(0+e, 1-e) # BB
+
+# Genotype frequences in individual given the genotype of the individual - genotype penetrance
+e <- 0.001
+testgenoPenetranceCPT <- matrix(nrow=3, ncol=3)
+#                             AA       AB     BB Observed Geno
+testgenoPenetranceCPT[,1] <-c(1-e-e^2, e,     e^2)     # AA True Geno
+testgenoPenetranceCPT[,2] <-c(e,       1-2*e, e)       # AB
+testgenoPenetranceCPT[,3] <-c(e^2,     e,     1-e-e^2) # BB
+```
+
+Insert the Pedigree, genotype, phenotype, and age at phenotype data
+```{r}
+# dput(testPedigreeData)
+testpedigreeData <- structure(list(IID = c(5788956L, 5166631L, 9880745L, 6942882L, 6632232L, 6804872L),
+                                   FID = c(NA, 6942882L, 5166631L, NA, NA, 6632232L),
+                                   MID = c(NA, NA, 5788956L, NA, NA, 9880745L)),
+                              class = "data.frame", row.names = c(NA, -6L))
+
+```
+
+
+Test 1 - All phenotypes, genotypes, and age are in agreeance.
+```{r}
+# dput(testGenotypeData)
+testgenotypeData <- structure(list(IID = c(5788956L, 6942882L, 6632232L, 6804872L),
+                                   Genotype = c("AA", "AB", "AB","BB")),
+                              class = "data.frame", row.names = c(NA, -4L))
+# dput(testPhenotypeData)
+testphenotypeData <- structure(list(IID = c(5788956L, 6632232L, 5166631L, 6804872L),
+                                    Phenotype = c("Unaffected", "Unaffected", "Unaffected", "Affected")),
+                               class = "data.frame", row.names = c(NA, -4L))
+#New paramter for age at recorded phenotype observation
+testagePhenotype <- structure(list(IID = c(5788956L, 6632232L, 5166631L, 6804872L),
+                               Age = c(5, 5, 5, 5)),
+                          class = "data.frame", row.names = c(NA, -4L))
+
+out <- AlleleFetch(pedigreeData = testpedigreeData,
+                   genotypeState = testgenotypeState,
+                  genotypeData = testgenotypeData,
+                  phenotypeState = testphenotypeState,
+                  phenotypeData = testphenotypeData,
+                  genoPT = testgenoPT,
+                   mendelianCPT = testmendelianCPT,
+                   mendelianCPTOnlyFather = testmendelianCPTOnlyFather,
+                   mendelianCPTOnlyMother = testmendelianCPTOnlyMother,
+                   genoPenetranceCPT = testgenoPenetranceCPT,
+                   phenoPenetranceCPT = testphenoPenetranceCPT,
+                  agePhenotype = testagePhenotype,
+                  phenoPenetranceCPT_Before = testphenoPenetranceCPT_Before)
+result <- out$result
+plot(out$model)
+
+```
+Test 2 - Individual 6804872L is unaffected aged 5
+```{r}
+testgenotypeData <- structure(list(IID = c(5788956L, 6942882L, 6632232L, 6804872L),
+                                   Genotype = c("AA", "AB", "AB","BB")),
+                              class = "data.frame", row.names = c(NA, -4L))
+# dput(testPhenotypeData)
+testphenotypeData <- structure(list(IID = c(5788956L, 6632232L, 5166631L, 6804872L),
+                                    Phenotype = c("Unaffected", "Unaffected", "Unaffected", "Unaffected")),
+                               class = "data.frame", row.names = c(NA, -4L))
+#New paramter for age at recorded phenotype observation
+testagePhenotype <- structure(list(IID = c(5788956L, 6632232L, 5166631L, 6804872L),
+                               Age = c(5, 5, 5, 5)),
+                          class = "data.frame", row.names = c(NA, -4L))
+
+out <- AlleleFetch(pedigreeData = testpedigreeData,
+                   genotypeState = testgenotypeState,
+                  genotypeData = testgenotypeData,
+                  phenotypeState = testphenotypeState,
+                  phenotypeData = testphenotypeData,
+                  genoPT = testgenoPT,
+                   mendelianCPT = testmendelianCPT,
+                   mendelianCPTOnlyFather = testmendelianCPTOnlyFather,
+                   mendelianCPTOnlyMother = testmendelianCPTOnlyMother,
+                   genoPenetranceCPT = testgenoPenetranceCPT,
+                   phenoPenetranceCPT = testphenoPenetranceCPT,
+                  agePhenotype = testagePhenotype,
+                  phenoPenetranceCPT_Before = testphenoPenetranceCPT_Before)
+result2 <- out$result
+plot(out$model)
+```
+
+
+Test 3 - Individual 6804872L is unaffected age 2
+```{r}
+# dput(testGenotypeData)
+testgenotypeData <- structure(list(IID = c(5788956L, 6942882L, 6632232L, 6804872L),
+                                   Genotype = c("AA", "AB", "AB","BB")),
+                              class = "data.frame", row.names = c(NA, -4L))
+# dput(testPhenotypeData)
+testphenotypeData <- structure(list(IID = c(5788956L, 6632232L, 5166631L, 6804872L),
+                                    Phenotype = c("Unaffected", "Unaffected", "Unaffected", "Unaffected")),
+                               class = "data.frame", row.names = c(NA, -4L))
+#New paramter for age at recorded phenotype observation
+testagePhenotype <- structure(list(IID = c(5788956L, 6632232L, 5166631L, 6804872L),
+                               Age = c(5, 5, 5, 2)),
+                          class = "data.frame", row.names = c(NA, -4L))
+
+out <- AlleleFetch(pedigreeData = testpedigreeData,
+                   genotypeState = testgenotypeState,
+                  genotypeData = testgenotypeData,
+                  phenotypeState = testphenotypeState,
+                  phenotypeData = testphenotypeData,
+                  genoPT = testgenoPT,
+                   mendelianCPT = testmendelianCPT,
+                   mendelianCPTOnlyFather = testmendelianCPTOnlyFather,
+                   mendelianCPTOnlyMother = testmendelianCPTOnlyMother,
+                   genoPenetranceCPT = testgenoPenetranceCPT,
+                   phenoPenetranceCPT = testphenoPenetranceCPT,
+                  agePhenotype = testagePhenotype,
+                  phenoPenetranceCPT_Before = testphenoPenetranceCPT_Before)
+result3 <- out$result
+plot(out$model)
+
+```
+
+

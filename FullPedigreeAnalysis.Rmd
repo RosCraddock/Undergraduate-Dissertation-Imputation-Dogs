@@ -512,6 +512,80 @@ test %>% ggplot(aes(year, value, group=State, col=State))+
 
 ```
 
+#Example for the identification of At-Risk Dogs
+```{r}
+#2019
+At_Risk_2019 <- GenoProbs_AlphaPeel[GenoProbs_AlphaPeel$DOB > "2018-12-31",]
+At_Risk_2019 <- At_Risk_2019[At_Risk_2019$DOB < "2020-01-01",]
+At_Risk_2019 <- At_Risk_2019[!is.na(At_Risk_2019$IID),]
+At_Risk_2019 <- At_Risk_2019 %>%
+  filter(BB >0.0317)
+
+At_Risk_2019 <- GenoProbs_AlphaPeel[GenoProbs_AlphaPeel$DOB > "2018-12-31",]
+At_Risk_2019 <- At_Risk_2019[At_Risk_2019$DOB < "2020-01-01",]
+At_Risk_2019 <- At_Risk_2019[!is.na(At_Risk_2019$IID),]
+At_Risk_2019 <- At_Risk_2019 %>%
+  filter(AB >0.293)
+
+x <- Alpha_Peel_Geno$IID %in% At_Risk_2019$IID 
+y <- Alpha_Peel_Geno[x,]
+UnknownDNA <- y %>%
+  filter(Genotype == 9)
+#2020
+At_Risk_2020 <- GenoProbs_AlphaPeel[GenoProbs_AlphaPeel$DOB > "2019-12-31",]
+At_Risk_2020 <- At_Risk_2020[At_Risk_2020$DOB < "2021-01-01",]
+At_Risk_2020 <- At_Risk_2020[!is.na(At_Risk_2020$IID),]
+At_Risk_2020 <- At_Risk_2020 %>%
+  filter(BB >0.0425)
+
+At_Risk_2020 <- GenoProbs_AlphaPeel[GenoProbs_AlphaPeel$DOB > "2019-12-31",]
+At_Risk_2020 <- At_Risk_2020[At_Risk_2020$DOB < "2021-01-01",]
+At_Risk_2020 <- At_Risk_2020[!is.na(At_Risk_2020$IID),]
+At_Risk_2020 <- At_Risk_2020 %>%
+  filter(AB >0.327)
+
+x <- Alpha_Peel_Geno$IID %in% At_Risk_2020$IID 
+y <- Alpha_Peel_Geno[x,]
+UnknownDNA <- y %>%
+  filter(Genotype == 9)
+#2021
+At_Risk_2021 <- GenoProbs_AlphaPeel[GenoProbs_AlphaPeel$DOB > "2020-12-31",]
+At_Risk_2021 <- At_Risk_2021[At_Risk_2021$DOB < "2022-01-01",]
+At_Risk_2021 <- At_Risk_2021[!is.na(At_Risk_2021$IID),]
+At_Risk_2021 <- At_Risk_2021 %>%
+  filter(BB >0.0222)
+
+At_Risk_2021 <- GenoProbs_AlphaPeel[GenoProbs_AlphaPeel$DOB > "2020-12-31",]
+At_Risk_2021 <- At_Risk_2021[At_Risk_2021$DOB < "2022-01-01",]
+At_Risk_2021 <- At_Risk_2021[!is.na(At_Risk_2021$IID),]
+At_Risk_2021 <- At_Risk_2021 %>%
+  filter(AB >0.254)
+
+x <- Alpha_Peel_Geno$IID %in% At_Risk_2021$IID 
+y <- Alpha_Peel_Geno[x,]
+UnknownDNA <- y %>%
+  filter(Genotype == 9)
+
+#2022
+At_Risk_2022 <- GenoProbs_AlphaPeel[GenoProbs_AlphaPeel$DOB > "2021-12-31",]
+At_Risk_2022 <- At_Risk_2022[At_Risk_2022$DOB < "2023-01-01",]
+At_Risk_2022 <- At_Risk_2022[!is.na(At_Risk_2022$IID),]
+At_Risk_2022 <- At_Risk_2022 %>%
+  filter(BB >0.0277)
+
+At_Risk_2022 <- GenoProbs_AlphaPeel[GenoProbs_AlphaPeel$DOB > "2021-12-31",]
+At_Risk_2022 <- At_Risk_2022[At_Risk_2022$DOB < "2023-01-01",]
+At_Risk_2022 <- At_Risk_2022[!is.na(At_Risk_2022$IID),]
+At_Risk_2022 <- At_Risk_2022 %>%
+  filter(AB >0.277)
+
+x <- Alpha_Peel_Geno$IID %in% At_Risk_2022$IID 
+y <- Alpha_Peel_Geno[x,]
+UnknownDNA <- y %>%
+  filter(Genotype == 9)
+```
+
+
 #Validation of full pedigree imputation in AlphaPeel - comparing hereditary status with genotype dosages by pearson coefficient
 ```{r}
 

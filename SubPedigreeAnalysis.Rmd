@@ -361,53 +361,53 @@ AFGeno <- AF_Sub_Trend_Plot %>% ggplot(aes(year, value, group=State, col=State))
 (3) when ran through AlleleFetch with genotypes and phenotypes
 ```{r}
 AF_Sub_Data <- read.csv("/Users/roscraddock/Documents/University\ of\ Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/PBGV_Sub_2009-2014.csv")
-AF_Sub_Result <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_ResultPheno_2009-2014.csv")
-AF_Sub_Result <- AF_Sub_Result %>%
+AF_Sub_ResultPheno <- read.csv("/Users/roscraddock/Documents/University of Edinburgh/HighlanderLab - AlleleFetch_data/Clean Pedigrees/PBGV/AlleleFetch Inputs/PBGV_ResultPheno_2009-2014.csv")
+AF_Sub_ResultPheno <- AF_Sub_ResultPheno %>%
   select(!X)
 
 #Widen AF_Sub_Result
-AF_Sub_Result <- AF_Sub_Result %>%
+AF_Sub_ResultPheno <- AF_Sub_ResultPheno %>%
   pivot_wider(names_from = c(State, Var), 
               values_from = Freq)
 #Merge together
-AF_Sub_Trend <- merge(AF_Sub_Result, AF_Sub_Data, by.x = "IID", by.y = "IRN")
+AF_SubPheno_Trend <- merge(AF_Sub_ResultPheno, AF_Sub_Data, by.x = "IID", by.y = "IRN")
 
 #Reduce to the IID, Genotypes, and DOB
-AF_Sub_Trend <- AF_Sub_Trend %>%
+AF_SubPheno_Trend <- AF_SubPheno_Trend %>%
   select(IID, AA_geno, AB_geno, BB_geno, OK_pheno, NOK_pheno, DOB)
 
 #Remove where DOB is NA - 800 removed?
-AF_Sub_Trend <- AF_Sub_Trend[!is.na(AF_Sub_Trend$DOB),]
+AF_SubPheno_Trend <- AF_SubPheno_Trend[!is.na(AF_SubPheno_Trend$DOB),]
 #Set DOB as date
-AF_Sub_Trend$DOB <- as.Date(AF_Sub_Trend$DOB)
+AF_SubPheno_Trend$DOB <- as.Date(AF_SubPheno_Trend$DOB)
 #Separate year into table
-AF_Sub_Trend$year <- format(AF_Sub_Trend$DOB, "%Y")
+AF_SubPheno_Trend$year <- format(AF_SubPheno_Trend$DOB, "%Y")
 
 #By year
-tmp <- AF_Sub_Trend %>%
+tmp <- AF_SubPheno_Trend %>%
   group_by(year) %>%
   summarise(mean(AA_geno))
-tmp2 <- AF_Sub_Trend %>%
+tmp2 <- AF_SubPheno_Trend %>%
   group_by(year) %>%
   summarise(mean(AB_geno))
-tmp3 <- AF_Sub_Trend %>%
+tmp3 <- AF_SubPheno_Trend %>%
   group_by(year) %>%
   summarise(mean(BB_geno))
-tmp4 <- AF_Sub_Trend %>%
+tmp4 <- AF_SubPheno_Trend %>%
   group_by(year) %>%
   summarise(mean(OK_pheno))
-tmp5 <- AF_Sub_Trend %>%
+tmp5 <- AF_SubPheno_Trend %>%
   group_by(year) %>%
   summarise(mean(NOK_pheno))
 
-AF_Sub_Trend_Plot <- cbind(tmp,tmp2,tmp3,tmp4,tmp5)
-AF_Sub_Trend_Plot <- AF_Sub_Trend_Plot[,c(1,2,4,6, 8, 10),]
+AF_SubPheno_Trend_Plot <- cbind(tmp,tmp2,tmp3,tmp4,tmp5)
+AF_SubPheno_Trend_Plot <- AF_SubPheno_Trend_Plot[,c(1,2,4,6, 8, 10),]
 
 #Move back into the tall format
-AF_Sub_Trend_Plot <- melt(AF_Sub_Trend_Plot, id.vars="year", variable.name = "State" )
+AF_SubPheno_Trend_Plot <- melt(AF_SubPheno_Trend_Plot, id.vars="year", variable.name = "State" )
 
 # Plotting the Mean frequency of states per year (2009 to January 2014)
-AFPheno <- AF_Sub_Trend_Plot %>% ggplot(aes(year, value, group=State, col=State))+
+AFPheno <- AF_SubPheno_Trend_Plot %>% ggplot(aes(year, value, group=State, col=State))+
   geom_line(size=1) +
   xlab("Year of Birth") +
   ylab("Mean Frequency") +
@@ -430,44 +430,44 @@ AF_Sub_ResultAge <- AF_Sub_ResultAge %>%
   pivot_wider(names_from = c(State, Var), 
               values_from = Freq)
 #Merge together
-AF_Sub_Trend <- merge(AF_Sub_ResultAge, AF_Sub_Data, by.x = "IID", by.y = "IRN")
+AF_Sub_TrendAge <- merge(AF_Sub_ResultAge, AF_Sub_Data, by.x = "IID", by.y = "IRN")
 
 #Reduce to the IID, Genotypes, and DOB
-AF_Sub_Trend <- AF_Sub_Trend %>%
+AF_Sub_TrendAge <- AF_Sub_TrendAge %>%
   select(IID, AA_geno, AB_geno, BB_geno, OK_pheno, NOK_pheno, DOB)
 
 #Remove where DOB is NA - 800 removed?
-AF_Sub_Trend <- AF_Sub_Trend[!is.na(AF_Sub_Trend$DOB),]
+AF_Sub_TrendAge <- AF_Sub_TrendAge[!is.na(AF_Sub_TrendAge$DOB),]
 #Set DOB as date
-AF_Sub_Trend$DOB <- as.Date(AF_Sub_Trend$DOB)
+AF_Sub_TrendAge$DOB <- as.Date(AF_Sub_TrendAge$DOB)
 #Separate year into table
-AF_Sub_Trend$year <- format(AF_Sub_Trend$DOB, "%Y")
+AF_Sub_TrendAge$year <- format(AF_Sub_TrendAge$DOB, "%Y")
 
 #By year
-tmp <- AF_Sub_Trend %>%
+tmp <- AF_Sub_TrendAge %>%
   group_by(year) %>%
   summarise(mean(AA_geno))
-tmp2 <- AF_Sub_Trend %>%
+tmp2 <- AF_Sub_TrendAge %>%
   group_by(year) %>%
   summarise(mean(AB_geno))
-tmp3 <- AF_Sub_Trend %>%
+tmp3 <- AF_Sub_TrendAge %>%
   group_by(year) %>%
   summarise(mean(BB_geno))
-tmp4 <- AF_Sub_Trend %>%
+tmp4 <- AF_Sub_TrendAge %>%
   group_by(year) %>%
   summarise(mean(OK_pheno))
-tmp5 <- AF_Sub_Trend %>%
+tmp5 <- AF_Sub_TrendAge %>%
   group_by(year) %>%
   summarise(mean(NOK_pheno))
 
-AF_Sub_Trend_Plot <- cbind(tmp,tmp2,tmp3,tmp4,tmp5)
-AF_Sub_Trend_Plot <- AF_Sub_Trend_Plot[,c(1,2,4,6, 8, 10),]
+AF_Sub_TrendAge_Plot <- cbind(tmp,tmp2,tmp3,tmp4,tmp5)
+AF_Sub_TrendAge_Plot <- AF_Sub_TrendAge_Plot[,c(1,2,4,6, 8, 10),]
 
 #Move back into the tall format
-AF_Sub_Trend_Plot <- melt(AF_Sub_Trend_Plot, id.vars="year", variable.name = "State" )
+AF_Sub_TrendAge_Plot <- melt(AF_Sub_TrendAge_Plot, id.vars="year", variable.name = "State" )
 
 # Plotting the Mean frequency of states per year (2009 to January 2014)
-AFPhenoAge <- AF_Sub_Trend_Plot %>% ggplot(aes(year, value, group=State, col=State))+
+AFPhenoAge <- AF_Sub_TrendAge_Plot %>% ggplot(aes(year, value, group=State, col=State))+
   geom_line(size=1) +
   xlab("Year of Birth") +
   ylab("Mean Frequency") +
@@ -534,3 +534,169 @@ ggarrange(OPGPlot, OPGPPlot, OPAGPPlot, labels = c("a", "b", "c"), ncol= 1, nrow
 ```
 
 
+#Example for the identification of At-Risk Dogs
+```{r}
+#Mean Minor Allele Frequency per year
+#DNA test only
+#Widen AF_Sub_Trend_Plot
+AF_Sub_MAF <- AF_Sub_Trend_Plot %>%
+  pivot_wider(names_from = State, 
+              values_from = value)
+AF_Sub_MAF$MAF <- AF_Sub_MAF$`mean(BB_geno)`+0.5*AF_Sub_MAF$`mean(AB_geno)`
+#DNA test and phenotype
+AF_SubPheno_MAF <- AF_SubPheno_Trend_Plot %>%
+  pivot_wider(names_from = State, 
+              values_from = value)
+AF_SubPheno_MAF$MAF <- AF_SubPheno_MAF$`mean(BB_geno)`+0.5*AF_SubPheno_MAF$`mean(AB_geno)`
+#DNA test, eye test, and age-adjusted penetrance
+AF_SubAge_MAF <- AF_Sub_TrendAge_Plot %>%
+  pivot_wider(names_from = State, 
+              values_from = value)
+AF_SubAge_MAF$MAF <- AF_SubAge_MAF$`mean(BB_geno)`+0.5*AF_SubAge_MAF$`mean(AB_geno)`
+
+
+#2013 - BB, DNA test only
+At_Risk_2013 <- AF_Sub_Trend[AF_Sub_Trend$DOB > "2012-12-31",]
+At_Risk_2013 <- At_Risk_2013[At_Risk_2013$DOB < "2014-01-01",]
+At_Risk_2013 <- At_Risk_2013[!is.na(At_Risk_2013$IID),]
+At_Risk_2013 <- At_Risk_2013 %>%
+  filter(BB_geno >0.0615)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2013$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+#2013 - AB, DNA test only
+At_Risk_2013 <- AF_Sub_Trend[AF_Sub_Trend$DOB > "2012-12-31",]
+At_Risk_2013 <- At_Risk_2013[At_Risk_2013$DOB < "2014-01-01",]
+At_Risk_2013 <- At_Risk_2013[!is.na(At_Risk_2013$IID),]
+At_Risk_2013 <- At_Risk_2013 %>%
+  filter(AB_geno >0.373)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2013$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+#2013 - BB, DNA test and eye test
+At_Risk_2013 <- AF_SubPheno_Trend[AF_SubPheno_Trend$DOB > "2012-12-31",]
+At_Risk_2013 <- At_Risk_2013[At_Risk_2013$DOB < "2014-01-01",]
+At_Risk_2013 <- At_Risk_2013[!is.na(At_Risk_2013$IID),]
+At_Risk_2013 <- At_Risk_2013 %>%
+  filter(BB_geno >0.0538)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2013$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+#2013 - AB, DNA test and eye test
+At_Risk_2013 <- AF_SubPheno_Trend[AF_SubPheno_Trend$DOB > "2012-12-31",]
+At_Risk_2013 <- At_Risk_2013[At_Risk_2013$DOB < "2014-01-01",]
+At_Risk_2013 <- At_Risk_2013[!is.na(At_Risk_2013$IID),]
+At_Risk_2013 <- At_Risk_2013 %>%
+  filter(AB_geno >0.356)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2013$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+#2013 - BB, DNA test and eye test with age-adjusted phenotypic penetrance
+At_Risk_2013 <- AF_Sub_TrendAge[AF_Sub_TrendAge$DOB > "2012-12-31",]
+At_Risk_2013 <- At_Risk_2013[At_Risk_2013$DOB < "2014-01-01",]
+At_Risk_2013 <- At_Risk_2013[!is.na(At_Risk_2013$IID),]
+At_Risk_2013 <- At_Risk_2013 %>%
+  filter(BB_geno >0.0586)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2013$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+#2013 - AB, DNA test and eye test with age-adjusted phenotypic penetrance
+At_Risk_2013 <- AF_Sub_TrendAge[AF_Sub_TrendAge$DOB > "2012-12-31",]
+At_Risk_2013 <- At_Risk_2013[At_Risk_2013$DOB < "2014-01-01",]
+At_Risk_2013 <- At_Risk_2013[!is.na(At_Risk_2013$IID),]
+At_Risk_2013 <- At_Risk_2013 %>%
+  filter(AB_geno >0.367)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2013$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+#2012 - BB, DNA test only
+At_Risk_2012 <- AF_Sub_Trend[AF_Sub_Trend$DOB > "2011-12-31",]
+At_Risk_2012 <- At_Risk_2012[At_Risk_2012$DOB < "2013-01-01",]
+At_Risk_2012 <- At_Risk_2012[!is.na(At_Risk_2012$IID),]
+At_Risk_2012 <- At_Risk_2012 %>%
+  filter(BB_geno >0.0778)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2012$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+#2012 - AB, DNA test only
+At_Risk_2012 <- AF_Sub_Trend[AF_Sub_Trend$DOB > "2011-12-31",]
+At_Risk_2012 <- At_Risk_2012[At_Risk_2012$DOB < "2013-01-01",]
+At_Risk_2012 <- At_Risk_2012[!is.na(At_Risk_2012$IID),]
+At_Risk_2012 <- At_Risk_2012 %>%
+  filter(AB_geno >0.402)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2012$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+#2012 - BB, DNA test and eye test
+At_Risk_2012 <- AF_SubPheno_Trend[AF_SubPheno_Trend$DOB > "2011-12-31",]
+At_Risk_2012 <- At_Risk_2012[At_Risk_2012$DOB < "2013-01-01",]
+At_Risk_2012 <- At_Risk_2012[!is.na(At_Risk_2012$IID),]
+At_Risk_2012 <- At_Risk_2012 %>%
+  filter(BB_geno >0.0687)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2012$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+#2012 - AB, DNA test and eye test
+At_Risk_2012 <- AF_SubPheno_Trend[AF_SubPheno_Trend$DOB > "2011-12-31",]
+At_Risk_2012 <- At_Risk_2012[At_Risk_2012$DOB < "2013-01-01",]
+At_Risk_2012 <- At_Risk_2012[!is.na(At_Risk_2012$IID),]
+At_Risk_2012 <- At_Risk_2012 %>%
+  filter(AB_geno >0.387)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2012$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+#2012 - BB, DNA test and eye test with age-adjusted phenotypic penetrance
+At_Risk_2012 <- AF_Sub_TrendAge[AF_Sub_TrendAge$DOB > "2011-12-31",]
+At_Risk_2012 <- At_Risk_2012[At_Risk_2012$DOB < "2013-01-01",]
+At_Risk_2012 <- At_Risk_2012[!is.na(At_Risk_2012$IID),]
+At_Risk_2012 <- At_Risk_2012 %>%
+  filter(BB_geno > 0.0756)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2012$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+#2013 - AB, DNA test and eye test with age-adjusted phenotypic penetrance
+At_Risk_2012 <- AF_Sub_TrendAge[AF_Sub_TrendAge$DOB > "2011-12-31",]
+At_Risk_2012 <- At_Risk_2012[At_Risk_2012$DOB < "2013-01-01",]
+At_Risk_2012 <- At_Risk_2012[!is.na(At_Risk_2012$IID),]
+At_Risk_2012 <- At_Risk_2012 %>%
+  filter(AB_geno > 0.399)
+
+x <- AF_Sub_Data$IRN %in% At_Risk_2012$IID 
+y <- AF_Sub_Data[x,]
+UnknownDNA <- y %>%
+  filter(DNA_result == "" | DNA_result == NA)
+
+```

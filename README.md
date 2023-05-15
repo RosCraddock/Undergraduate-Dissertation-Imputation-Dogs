@@ -17,4 +17,4 @@ SubPedigreeLOOCV: This outlines the Leave One Out Cross Validation used and the 
 
 AlleleFetch: Contains the Function AlleleFetch as described in Section 3.1.3 of the dissertation developed with Dr Gregor Gorjanc (my supervisor), Dr Mateja Janes (My other supervisor) and Dr Ivan Porcrnc as part of a summer internship in the Highlander Lab, Roslin Institute.
 
-
+TestAgeAdjustedPenetrance: Examples of the first three tests completed to validate the changes I made to AlleleFetch for age-adjusted penetrance. 
